@@ -6,6 +6,11 @@ import { getTruth, getDare, getTruthOrDare } from "../games/truthordare.js";
 import { playRPS } from "../games/rps.js";
 import { startMath } from "../games/math.js";
 import { logger } from "../../lib/logger.js";
+import {
+  handleTikTokDownload,
+  handleInstagramDownload,
+  handleYouTubeDownload,
+} from "./downloader.js";
 
 function getSender(msg: WAMessage): string {
   return msg.key.participant ?? msg.key.remoteJid ?? "";
@@ -42,6 +47,12 @@ export const MENU_TEXT = `╔═════════════════
 • *.uptime* — Show bot uptime
 • *.ping* — Ping the bot
 
+*⬇️ DOWNLOADER*
+• *.tiktok <url>* — Download TikTok (no watermark)
+• *.instagram <url>* — Download Instagram reel/post
+• *.youtube <url>* — Download YouTube video
+• *.ytaudio <url>* — Download YouTube audio (MP3)
+
 *🎮 GAMES*
 • *.trivia* — Answer a trivia question
 • *.truth* — Get a truth question
@@ -62,7 +73,6 @@ export const MENU_TEXT = `╔═════════════════
 *👑 OWNER ONLY*
 • *.public* — Set bot to public mode
 • *.private* — Set bot to private mode (owner only)
-• *.broadcast [msg]* — Broadcast a message
 
 _Prefix: ${BOT_CONFIG.prefix}_`;
 
@@ -107,6 +117,28 @@ export async function handleCommand(
           { text: `⏱️ *Bot Uptime*\n\n${getUptime()}` },
           { quoted: msg }
         );
+        break;
+
+      case "tiktok":
+      case "tt":
+        await handleTikTokDownload(sock, msg, rest);
+        break;
+
+      case "instagram":
+      case "ig":
+      case "insta":
+        await handleInstagramDownload(sock, msg, rest);
+        break;
+
+      case "youtube":
+      case "yt":
+        await handleYouTubeDownload(sock, msg, rest, false);
+        break;
+
+      case "ytaudio":
+      case "yta":
+      case "ytmp3":
+        await handleYouTubeDownload(sock, msg, rest, true);
         break;
 
       case "trivia":
