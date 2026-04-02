@@ -35,6 +35,7 @@ async function buildAll() {
       "qrcode",
       "ytdl-core",
       "sharp",
+      "mathjs",
       "better-sqlite3",
       "sqlite3",
       "canvas",
