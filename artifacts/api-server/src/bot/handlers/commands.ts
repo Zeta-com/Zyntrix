@@ -56,6 +56,11 @@ import {
   handleMuteGroup,
   handlePromote,
 } from "./group.js";
+import {
+  handleMovieSearch,
+  handleMovieSubs,
+  handleMovieDownload,
+} from "./movie.js";
 
 function getSender(msg: WAMessage): string {
   return msg.key.participant ?? msg.key.remoteJid ?? "";

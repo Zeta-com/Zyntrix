@@ -1,0 +1,216 @@
+if (['sm', 'movie', 'cineverse'].includes(command)) {
+    const query = args.join(" ");
+    if (!query) return reply("🎥 *Usage:* `.sm <movie name>`\nExample: `.sm Batman`");
+
+    await sock.sendMessage(from, { react: { text: '🔎', key: m.key } });
+    await reply(`🔎 *Searching movies for:* "${query}"...\n_Generating selection cards..._`);
+
+    try {
+        const { data } = await axios.get(`https://darkvibe314-silent-movies-api.hf.space/api/search`, { params: { query: query } });
+        if (!data.results || data.results.length === 0) return reply("🩸 *No movies found!*");
+
+        const results = data.results.slice(0, 5); 
+        const cards = [];
+
+        for (let i = 0; i < results.length; i++) {
+            const movie = results[i];
+            const title = (movie.title || "Unknown").slice(0, 50);
+            const isSeries = movie.subjectType === 2; 
+            
+            global.movieSubCache[movie.subjectId] = movie.subtitles || "None";
+            const subText = movie.subtitles ? movie.subtitles.split(',').slice(0, 3).join(', ') + "..." : 'None';
+            const desc = `⭐ IMDb: ${movie.imdbRatingValue || 'N/A'}\n🎭 Genre: ${movie.genre || 'N/A'}\n📅 Year: ${movie.releaseDate?.split('-')[0] || 'Unknown'}\n📌 Type: ${isSeries ? 'Series 📺' : 'Movie 🎬'}\n💬 Subs: ${subText}`;
+            const coverUrl = movie.cover?.url || 'https://i.ibb.co/mVvK7CFB/ad09bf786822.jpg';
+
+            const media = await prepareWAMessageMedia({ image: { url: coverUrl } }, { upload: sock.waUploadToServer });
+            let actionButtons = [];
+            
+            if (isSeries) {
+                actionButtons.push({ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "📺 Download (Default)", id: `.dlmovie ${movie.subjectId} 1 1` }) });
+                actionButtons.push({ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "📝 Select Subtitles", id: `.smsubs ${movie.subjectId} 1 1` }) });
+                actionButtons.push({ name: "cta_copy", buttonParamsJson: JSON.stringify({ display_text: "📋 Copy ID", id: "copy_id", copy_code: `.dlmovie ${movie.subjectId} <season> <episode> <Language>` }) });
+            } else {
+                actionButtons.push({ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🎬 Download (Default)", id: `.dlmovie ${movie.subjectId} null null` }) });
+                actionButtons.push({ name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "📝 Select Subtitles", id: `.smsubs ${movie.subjectId} null null` }) });
+            }
+
+            cards.push({ body: proto.Message.InteractiveMessage.Body.create({ text: desc }), header: proto.Message.InteractiveMessage.Header.create({ title: `🎬 ${title}`, hasMediaAttachment: true, imageMessage: media.imageMessage }), nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({ buttons: actionButtons }) });
+        }
+
+        const interactiveMessage = proto.Message.InteractiveMessage.create({ body: proto.Message.InteractiveMessage.Body.create({ text: `🎥 *Results for:* ${query}\n\nSwipe to choose! ➡️` }), carouselMessage: proto.Message.InteractiveMessage.CarouselMessage.create({ cards: cards, messageVersion: 1 }) });
+        const msg = generateWAMessageFromContent(from, { viewOnceMessage: { message: { messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }, interactiveMessage: interactiveMessage } } }, { quoted: m });
+        await sock.relayMessage(from, msg.message, { messageId: msg.key.id });
+        await sock.sendMessage(from, { react: { text: '✅', key: m.key } });
+    } catch (e) { reply(`🩸 Search Error: ${e.message}`); }
+}
+
+// ════════════════════════════════════════════
+// 2. 📝 BULLETPROOF SUBTITLE SELECTOR (.smsubs)
+// ════════════════════════════════════════════
+if (command === 'smsubs') {
+    const movieId = args[0];
+    const season = args[1];
+    const episode = args[2];
+    if (!movieId) return;
+
+    await sock.sendMessage(from, { react: { text: '⏳', key: m.key } });
+    let subList = [];
+
+    if (global.movieSubCache && global.movieSubCache[movieId] && global.movieSubCache[movieId] !== 'None') {
+        subList = global.movieSubCache[movieId].split(',').map(s => s.trim());
+    } else {
+        try {
+            const { data } = await axios.get(`https://darkvibe314-silent-movies-api.hf.space/api/search`, { params: { query: movieId } });
+            if (data.results && data.results.length > 0 && data.results[0].subtitles) {
+                subList = data.results[0].subtitles.split(',').map(s => s.trim());
+            }
+        } catch (e) {}
+    }
+
+    if (subList.length === 0) return reply("🩸 No subtitles available.");
+
+    let msg = `🗣️ *AVAILABLE SUBTITLES*\n━━━━━━━━━━━━━━━━━━━━━━\n_Copy and send the command for your preferred language:_\n\n`;
+    subList.forEach(sub => { msg += `🌐 *${sub}*\n👉 \`.dlmovie ${movieId} ${season} ${episode} ${sub}\`\n\n`; });
+
+    await reply(msg);
+    await sock.sendMessage(from, { react: { text: '✅', key: m.key } });
+}
+
+// ════════════════════════════════════════════
+// 3. 📥 THE IRON PIPE DOWNLOADER & TRANSLATOR (.dlmovie)
+// ════════════════════════════════════════════
+if (['dlmovie', 'downloadmovie'].includes(command)) { 
+    const movieId = args[0];
+    const season = (args[1] && args[1] !== 'null') ? args[1] : null; 
+    const episode = (args[2] && args[2] !== 'null') ? args[2] : null; 
+    const subLang = args.slice(3).join(" "); 
+
+    if (!movieId) return reply("🩸 *Usage:* `.dlmovie <id> [season] [episode] [language]`");
+
+    await sock.sendMessage(from, { react: { text: '⏳', key: m.key } });
+    const subMsg = subLang ? `\n🗣️ *Requested Subtitle:* ${subLang}` : "";
+    await reply(`⏳ *Processing Movie...*${subMsg}\n_Downloading and encrypting for WhatsApp... Please wait!_`);
+
+    const sysFs = require('fs');
+    const sysPath = require('path');
+    const customTempDir = sysPath.join(__dirname, 'silent_temp');
+    if (!sysFs.existsSync(customTempDir)) sysFs.mkdirSync(customTempDir);
+    process.env.TMPDIR = customTempDir; 
+
+    let tempVidPath = null;
+
+    try {
+        const requestParams = { movie_id: movieId };
+        if (season && episode) { requestParams.season = season; requestParams.episode = episode; }
+        
+        // We ALWAYS request English first to ensure a high-quality base for translation!
+        requestParams.sub_lang = 'English'; 
+
+        const dlReq = await axios.get(`https://darkvibe314-silent-movies-api.hf.space/api/download`, { params: requestParams });
+        if (!dlReq.data.download_url) throw new Error("Could not find raw video URL.");
+
+        const sizeMB = dlReq.data.size_bytes ? parseFloat((parseInt(dlReq.data.size_bytes) / (1024 * 1024)).toFixed(2)) : 0;
+        let fileName = (season && episode) ? `Silent_Series_${movieId}_S${season}E${episode}.mp4` : `Silent_Movie_${movieId}.mp4`;
+        tempVidPath = sysPath.join(customTempDir, fileName);
+
+        // 🎬 1. DOWNLOAD & SEND MOVIE (IRON PIPE)
+        const writer = sysFs.createWriteStream(tempVidPath);
+        const response = await axios({ url: dlReq.data.download_url, method: 'GET', responseType: 'stream', timeout: 0 });
+        response.data.pipe(writer);
+        await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
+
+        await reply(`☁️ *File Downloaded! (${sizeMB} MB)*\n_Encrypting video payload..._`);
+
+        let sentMovie = await sock.sendMessage(from, {
+            document: { url: tempVidPath },
+            mimetype: 'video/mp4',
+            fileName: fileName,
+            caption: `🎬 *${fileName}*\n\n📦 *Size:* ${sizeMB} MB\n\n> 🤖 _Silent Tech Engine_`,
+            contextInfo: { forwardingScore: 999, isForwarded: true }
+        }, { quoted: m });
+
+        if (sysFs.existsSync(tempVidPath)) sysFs.unlinkSync(tempVidPath);
+
+        // 🗄️ 2. AUTO-SAVE TO SILENT DRIVE
+        try {
+            const DRIVE_DB = sysPath.join(__dirname, 'silent_drive.json');
+            if (sysFs.existsSync(DRIVE_DB)) {
+                let db = JSON.parse(sysFs.readFileSync(DRIVE_DB));
+                if (!db[from]) db[from] = { pwd: "/", fs: { "/": { type: "dir", contents: [] } } };
+                db[from].fs["/" + fileName] = { type: "file", name: fileName, size: dlReq.data.size_bytes || 0, payload: sentMovie.message };
+                if (!db[from].fs["/"].contents.includes(fileName)) db[from].fs["/"].contents.push(fileName);
+                sysFs.writeFileSync(DRIVE_DB, JSON.stringify(db, null, 2));
+            }
+        } catch (e) {}
+
+        // 📝 3. THE GOD-TIER LIVE SUBTITLE TRANSLATOR
+        if (dlReq.data.subtitle_url) {
+            try {
+                let subRes = await axios.get(dlReq.data.subtitle_url, { responseType: 'arraybuffer' });
+                let srtBuffer = Buffer.from(subRes.data);
+                let finalSubName = `Subtitles_English.srt`;
+                let finalCaption = `📝 *English Subtitles*`;
+
+                if (subLang && subLang.toLowerCase() !== 'english') {
+                    const targetCode = getLangCode(subLang);
+                    
+                    if (!targetCode) {
+                        // Language not in our massive dictionary
+                        finalCaption = `📝 *English Subtitles*\n> ⚠️ _Could not translate: "${subLang}" is not in my language dictionary._`;
+                    } 
+                    else if (targetCode !== 'en') {
+                        await reply(`🔄 *AI Translator Active*\n_Converting English subtitles to ${subLang}... This will take ~10 seconds!_`);
+                        
+                        const { translate } = require('@vitalets/google-translate-api');
+                        let srtText = srtBuffer.toString('utf8');
+                        let blocks = srtText.replace(/\r\n/g, '\n').split('\n\n').filter(b => b.trim());
+                        
+                        let translatedSRT = '';
+                        
+                        for (let i = 0; i < blocks.length; i += 40) {
+                            let chunk = blocks.slice(i, i + 40);
+                            let textArray = chunk.map(b => b.split('\n').slice(2).join('\n')); 
+                            let combinedText = textArray.join(' \n\n===\n\n '); 
+                            
+                            try {
+                                let res = await translate(combinedText, { to: targetCode });
+                                let transArray = res.text.split(/\n*\s*===\s*\n*/);
+                                
+                                for (let j = 0; j < chunk.length; j++) {
+                                    let lines = chunk[j].split('\n');
+                                    let transLine = transArray[j] || textArray[j]; 
+                                    translatedSRT += `${lines[0]}\n${lines[1]}\n${transLine.trim()}\n\n`;
+                                }
+                            } catch (err) {
+                                for (let j = 0; j < chunk.length; j++) { translatedSRT += `${chunk[j]}\n\n`; }
+                            }
+                            await new Promise(r => setTimeout(r, 500)); 
+                        }
+                        
+                        srtBuffer = Buffer.from(translatedSRT, 'utf8');
+                        finalSubName = `Subtitles_${subLang}.srt`;
+                        finalCaption = `📝 *${subLang} Subtitles*\n> 🤖 _Auto-Translated by Silent AI_`;
+                    }
+                }
+
+                await sock.sendMessage(from, {
+                    document: srtBuffer,
+                    mimetype: 'application/x-subrip',
+                    fileName: finalSubName,
+                    caption: finalCaption
+                }, { quoted: m });
+
+            } catch (subErr) {
+                console.error("Translator Error:", subErr);
+            }
+        }
+
+        await sock.sendMessage(from, { react: { text: '✅', key: m.key } });
+
+    } catch (e) {
+        console.error("[DLMOVIE ERROR]", e.message);
+        if (tempVidPath && sysFs.existsSync(tempVidPath)) sysFs.unlinkSync(tempVidPath);
+        await sock.sendMessage(from, { react: { text: '❌', key: m.key } });
+        reply(`🩸 Download Error: ${e.message}`);
+    }
+}
