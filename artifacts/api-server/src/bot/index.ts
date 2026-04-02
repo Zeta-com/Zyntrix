@@ -9,6 +9,7 @@ import qrcode from "qrcode-terminal";
 import fs from "fs";
 import { logger } from "../lib/logger.js";
 import { BOT_CONFIG } from "./config.js";
+import { setQR, setConnected } from "./qrstore.js";
 import { cacheMessage, handleDeletedMessage } from "./handlers/messageDelete.js";
 import { handleViewOnce } from "./handlers/viewOnce.js";
 import { handleStatusGrab } from "./handlers/status.js";
@@ -49,9 +50,11 @@ export async function startBot() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
+      setQR(qr);
       logger.info("QR Code received! Scan it with WhatsApp:");
       qrcode.generate(qr, { small: true });
       console.log("\n📱 Scan the QR code above with WhatsApp to connect the bot!\n");
+      console.log("🌐 Or open this URL in your browser to scan: /api/qr\n");
     }
 
     if (connection === "close") {
@@ -76,6 +79,7 @@ export async function startBot() {
         setTimeout(() => startBot(), 2000);
       }
     } else if (connection === "open") {
+      setConnected();
       logger.info(
         `✅ ${BOT_CONFIG.botName} connected successfully! Bot is now online.`
       );

@@ -32,6 +32,7 @@ async function buildAll() {
       "@whiskeysockets/baileys",
       "@hapi/boom",
       "qrcode-terminal",
+      "qrcode",
       "ytdl-core",
       "sharp",
       "better-sqlite3",
