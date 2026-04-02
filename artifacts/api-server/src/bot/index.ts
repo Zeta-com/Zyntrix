@@ -71,7 +71,7 @@ export async function startBot() {
         logger.info("Reconnecting in 5 seconds...");
         setTimeout(() => startBot(), 5000);
       } else {
-        logger.warn("Logged out. Please delete the session folder and restart.");
+        logger.warn("Logged out. Delete the session folder and restart.");
         const sessionPath = BOT_CONFIG.sessionDir;
         if (fs.existsSync(sessionPath)) {
           fs.rmSync(sessionPath, { recursive: true });
@@ -80,44 +80,69 @@ export async function startBot() {
       }
     } else if (connection === "open") {
       setConnected();
-      logger.info(
-        `✅ ${BOT_CONFIG.botName} connected successfully! Bot is now online.`
-      );
+      logger.info(`✅ ${BOT_CONFIG.botName} connected successfully!`);
       console.log(`\n✅ ${BOT_CONFIG.botName} is now online and ready!\n`);
     }
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
-    if (type !== "notify") return;
+    // Accept both "notify" (live messages) and "append" (for some clients)
+    if (type !== "notify" && type !== "append") return;
 
     for (const msg of messages) {
-      if (!msg.message || msg.key.fromMe) continue;
-
-      cacheMessage(msg);
+      if (!msg.message) continue;
 
       const text = getMessageText(msg);
       const jid = getJid(msg);
+      const isFromMe = msg.key.fromMe === true;
 
+      // Always cache messages (for delete spy)
+      if (!isFromMe) {
+        cacheMessage(msg);
+      }
+
+      // For messages sent BY the bot owner (fromMe), only process commands
+      // This lets the owner test commands from their own phone
+      if (isFromMe) {
+        if (text && text.startsWith(BOT_CONFIG.prefix)) {
+          console.log(`[CMD from owner] ${text}`);
+          const commandText = text.slice(BOT_CONFIG.prefix.length);
+          const cmd = commandText.split(/\s+/)[0]?.toLowerCase() ?? "";
+          if (cmd === "status") {
+            const args = commandText.split(/\s+/);
+            await handleStatusGrab(sock, msg, args[1]);
+          } else {
+            await handleCommand(sock, msg, commandText);
+          }
+        }
+        continue;
+      }
+
+      // For messages from others:
       const hasViewOnce =
         !!msg.message.viewOnceMessage ||
         !!msg.message.viewOnceMessageV2 ||
         !!msg.message.viewOnceMessageV2Extension;
 
       if (hasViewOnce) {
+        console.log(`[VIEW-ONCE] from ${jid}`);
         await handleViewOnce(sock, msg);
         continue;
       }
 
       if (!text) continue;
 
+      console.log(`[MSG] ${jid}: ${text.slice(0, 80)}`);
+
       if (text.startsWith(BOT_CONFIG.prefix)) {
         const commandText = text.slice(BOT_CONFIG.prefix.length);
         const cmd = commandText.split(/\s+/)[0]?.toLowerCase() ?? "";
 
+        console.log(`[CMD] ${cmd} from ${jid}`);
+
         if (cmd === "status") {
           const args = commandText.split(/\s+/);
-          const target = args[1];
-          await handleStatusGrab(sock, msg, target);
+          await handleStatusGrab(sock, msg, args[1]);
         } else {
           await handleCommand(sock, msg, commandText);
         }
