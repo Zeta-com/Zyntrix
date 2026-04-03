@@ -3,6 +3,9 @@ import makeWASocket, {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
+  type WASocket,
+  type AnyMessageContent,
+  type MiscMessageGenerationOptions,
 } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import qrcode from "qrcode-terminal";
@@ -14,13 +17,56 @@ import { setQR, setConnected } from "./qrstore.js";
 import { cacheMessage, handleDeletedMessage } from "./handlers/messageDelete.js";
 import { handleViewOnce, handleVVCommand } from "./handlers/viewOnce.js";
 import { handleStatusGrab } from "./handlers/status.js";
-import {
-  handleCommand,
-  getMessageText,
-  getJid,
-} from "./handlers/commands.js";
+import { handleCommand, getMessageText, getJid } from "./handlers/commands.js";
 import { hasActiveTrivia, checkTriviaAnswer } from "./games/trivia.js";
 import { hasActiveMath, checkMathAnswer } from "./games/math.js";
+import { sendCTA } from "./helpers/cta.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Intercepts every sock.sendMessage call.
+// • Text-only messages → sent as a forwarded-style CTA button message.
+// • Everything else (images, videos, stickers, reactions, deletes, …) →
+//   passed through to the original sendMessage unchanged.
+// ─────────────────────────────────────────────────────────────────────────────
+function patchSockForCTA(sock: WASocket): WASocket {
+  const original = sock.sendMessage.bind(sock);
+
+  (sock as any).sendMessage = async (
+    jid: string,
+    content: AnyMessageContent,
+    options?: MiscMessageGenerationOptions
+  ) => {
+    const isTextOnly =
+      "text" in content &&
+      typeof (content as any).text === "string" &&
+      !("image" in content) &&
+      !("video" in content) &&
+      !("audio" in content) &&
+      !("sticker" in content) &&
+      !("document" in content) &&
+      !("react" in content) &&
+      !("delete" in content) &&
+      !("forward" in content) &&
+      !("poll" in content) &&
+      !("disappearingMessagesInChat" in content) &&
+      !("groupUpdate" in content);
+
+    if (isTextOnly) {
+      await sendCTA(sock, jid, (content as any).text as string, {
+        forwarded: true,
+        quoted: options?.quoted as any,
+        footer: BOT_CONFIG.botName,
+        buttonText: "📢 Join Our Channel",
+      });
+      // Return a minimal stub so callers that use the return value don't crash
+      return { key: { id: "", remoteJid: jid, fromMe: true } } as any;
+    }
+
+    return original(jid, content, options);
+  };
+
+  return sock;
+}
 
 export async function startBot() {
   if (!fs.existsSync(BOT_CONFIG.sessionDir)) {
@@ -32,7 +78,7 @@ export async function startBot() {
 
   logger.info({ version }, "Starting WhatsApp bot with Baileys version");
 
-  const sock = makeWASocket({
+  const rawSock = makeWASocket({
     version,
     auth: {
       creds: state.creds,
@@ -44,6 +90,9 @@ export async function startBot() {
     syncFullHistory: false,
     generateHighQualityLinkPreview: true,
   });
+
+  // Patch BEFORE attaching any event handlers so all downstream code sees it
+  const sock = patchSockForCTA(rawSock);
 
   sock.ev.on("creds.update", saveCreds);
 
@@ -68,16 +117,14 @@ export async function startBot() {
         setTimeout(() => startBot(), 5000);
       } else {
         logger.warn("Logged out — deleting session and restarting.");
-        const sessionPath = BOT_CONFIG.sessionDir;
-        if (fs.existsSync(sessionPath)) {
-          fs.rmSync(sessionPath, { recursive: true });
+        if (fs.existsSync(BOT_CONFIG.sessionDir)) {
+          fs.rmSync(BOT_CONFIG.sessionDir, { recursive: true });
         }
         setTimeout(() => startBot(), 2000);
       }
     } else if (connection === "open") {
       setConnected();
 
-      // ── Auto-detect owner from connected account ──────────────────────────
       if (sock.user?.id) {
         setBotOwnerJid(sock.user.id);
       }
@@ -96,20 +143,17 @@ export async function startBot() {
       const jid = getJid(msg);
       const isFromMe = msg.key.fromMe === true;
 
-      // ── Cache all incoming messages for delete spy ────────────────────────
       if (!isFromMe) {
         cacheMessage(msg);
 
-        // ── Fake presence (typing/recording simulator) ────────────────────
+        // Fake typing / recording presence
         if (fakeTypeMode || fakeRecordMode) {
-          const targetJid = msg.key.participant ?? jid;
           const mode = fakeRecordMode ? "recording" : "composing";
-          // Send presence to the chat (not to the sender specifically)
           sock.sendPresenceUpdate(mode as any, jid).catch(() => {});
         }
       }
 
-      // ── Owner: process commands from bot's own messages ───────────────────
+      // Owner typing their own commands
       if (isFromMe) {
         if (text && text.startsWith(BOT_CONFIG.prefix)) {
           console.log(`[CMD/owner] ${text}`);
@@ -124,7 +168,7 @@ export async function startBot() {
         continue;
       }
 
-      // ── Others: full message processing ──────────────────────────────────
+      // View-once spy
       const hasViewOnce =
         !!msg.message.viewOnceMessage ||
         !!msg.message.viewOnceMessageV2 ||
@@ -144,7 +188,6 @@ export async function startBot() {
 
         console.log(`[CMD] ${cmd} from ${jid}`);
 
-        // .vv = manual view-once unlock (reply to a view-once)
         if (cmd === "vv") {
           await handleVVCommand(sock, msg);
           continue;

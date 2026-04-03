@@ -36,7 +36,6 @@ import {
   handleSpam, handleCountry, handleNASA, handleIPLookup, handleRandom,
   handleDisappear, handleAnime,
 } from "./extra.js";
-import { sendCTA } from "../helpers/cta.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getSender(msg: WAMessage): string {
@@ -207,34 +206,28 @@ export async function handleCommand(
       case "menu":
       case "help":
       case "start":
-        await sendCTA(sock, jid, MENU_TEXT, {
-          footer: BOT_CONFIG.botName,
-          buttonText: "📢 Join Our Channel",
-          quoted: msg,
-        });
+        await sock.sendMessage(jid, { text: MENU_TEXT }, { quoted: msg });
         break;
 
       case "alive": {
-        // Step 1 — quick alive blip
+        // Step 1 — quick alive blip (patch will wrap this too)
         await sock.sendMessage(jid, {
           text: `✅ *I'm Alive!* 🤖🔥\n\n_Getting full status..._`,
         }, { quoted: msg });
-        // Step 2 — full details card with CTA button
+        // Step 2 — full status details (patch wraps this with CTA)
         await new Promise(r => setTimeout(r, 800));
-        const aliveText =
-          `🤖 *${BOT_CONFIG.botName} — System Status*\n` +
-          `━━━━━━━━━━━━━━━━━━━\n` +
-          `🟢 Status: *ONLINE*\n` +
-          `⏱️ Uptime: *${getUptime()}*\n` +
-          `🔑 Mode: *${isPublicMode ? "Public 🌍" : "Private 🔒"}*\n` +
-          `👑 Owner: *${botOwnerJid ? "+" + botOwnerJid.split("@")[0] : "Not set"}*\n` +
-          `📅 Date: *${new Date().toLocaleString()}*\n` +
-          `📡 Connected: *Yes ✅*\n\n` +
-          `_Type *.menu* to see all commands_`;
-        await sendCTA(sock, jid, aliveText, {
-          footer: BOT_CONFIG.botName,
-          buttonText: "📢 Join Our Channel",
-        });
+        await sock.sendMessage(jid, {
+          text:
+            `🤖 *${BOT_CONFIG.botName} — System Status*\n` +
+            `━━━━━━━━━━━━━━━━━━━\n` +
+            `🟢 Status: *ONLINE*\n` +
+            `⏱️ Uptime: *${getUptime()}*\n` +
+            `🔑 Mode: *${isPublicMode ? "Public 🌍" : "Private 🔒"}*\n` +
+            `👑 Owner: *${botOwnerJid ? "+" + botOwnerJid.split("@")[0] : "Not set"}*\n` +
+            `📅 Date: *${new Date().toLocaleString()}*\n` +
+            `📡 Connected: *Yes ✅*\n\n` +
+            `_Type *.menu* to see all commands_`,
+        }, { quoted: msg });
         break;
       }
 
@@ -246,17 +239,14 @@ export async function handleCommand(
           latency < 200 ? "🟢 Excellent" :
           latency < 500 ? "🟡 Good" :
           latency < 1000 ? "🟠 Fair" : "🔴 Poor";
-        const pingText =
-          `🏓 *Pong!*\n` +
-          `━━━━━━━━━━━━━━━━━━━\n` +
-          `⚡ Latency: *${latency}ms*\n` +
-          `📶 Quality: *${quality}*\n` +
-          `🟢 Bot Status: *Online*`;
-        await sendCTA(sock, jid, pingText, {
-          footer: BOT_CONFIG.botName,
-          buttonText: "📢 Join Our Channel",
-          quoted: msg,
-        });
+        await sock.sendMessage(jid, {
+          text:
+            `🏓 *Pong!*\n` +
+            `━━━━━━━━━━━━━━━━━━━\n` +
+            `⚡ Latency: *${latency}ms*\n` +
+            `📶 Quality: *${quality}*\n` +
+            `🟢 Bot Status: *Online*`,
+        }, { quoted: msg });
         break;
       }
 
