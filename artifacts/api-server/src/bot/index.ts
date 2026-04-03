@@ -8,10 +8,11 @@ import { Boom } from "@hapi/boom";
 import qrcode from "qrcode-terminal";
 import fs from "fs";
 import { logger } from "../lib/logger.js";
-import { BOT_CONFIG } from "./config.js";
+import { BOT_CONFIG, setBotOwnerJid } from "./config.js";
+import { fakeTypeMode, fakeRecordMode } from "./state.js";
 import { setQR, setConnected } from "./qrstore.js";
 import { cacheMessage, handleDeletedMessage } from "./handlers/messageDelete.js";
-import { handleViewOnce } from "./handlers/viewOnce.js";
+import { handleViewOnce, handleVVCommand } from "./handlers/viewOnce.js";
 import { handleStatusGrab } from "./handlers/status.js";
 import {
   handleCommand,
@@ -51,10 +52,9 @@ export async function startBot() {
 
     if (qr) {
       setQR(qr);
-      logger.info("QR Code received! Scan it with WhatsApp:");
+      logger.info("QR Code received!");
       qrcode.generate(qr, { small: true });
-      console.log("\n📱 Scan the QR code above with WhatsApp to connect the bot!\n");
-      console.log("🌐 Or open this URL in your browser to scan: /api/qr\n");
+      console.log("\n📱 Scan the QR above or open /api/qr in your browser.\n");
     }
 
     if (connection === "close") {
@@ -62,16 +62,12 @@ export async function startBot() {
         (lastDisconnect?.error as Boom)?.output?.statusCode !==
         DisconnectReason.loggedOut;
 
-      logger.info(
-        { shouldReconnect, reason: lastDisconnect?.error?.message },
-        "Connection closed"
-      );
+      logger.info({ shouldReconnect }, "Connection closed");
 
       if (shouldReconnect) {
-        logger.info("Reconnecting in 5 seconds...");
         setTimeout(() => startBot(), 5000);
       } else {
-        logger.warn("Logged out. Delete the session folder and restart.");
+        logger.warn("Logged out — deleting session and restarting.");
         const sessionPath = BOT_CONFIG.sessionDir;
         if (fs.existsSync(sessionPath)) {
           fs.rmSync(sessionPath, { recursive: true });
@@ -80,13 +76,17 @@ export async function startBot() {
       }
     } else if (connection === "open") {
       setConnected();
-      logger.info(`✅ ${BOT_CONFIG.botName} connected successfully!`);
-      console.log(`\n✅ ${BOT_CONFIG.botName} is now online and ready!\n`);
+
+      // ── Auto-detect owner from connected account ──────────────────────────
+      if (sock.user?.id) {
+        setBotOwnerJid(sock.user.id);
+      }
+
+      console.log(`\n✅ ${BOT_CONFIG.botName} is ONLINE! Owner: ${sock.user?.id ?? "unknown"}\n`);
     }
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
-    // Accept both "notify" (live messages) and "append" (for some clients)
     if (type !== "notify" && type !== "append") return;
 
     for (const msg of messages) {
@@ -96,21 +96,27 @@ export async function startBot() {
       const jid = getJid(msg);
       const isFromMe = msg.key.fromMe === true;
 
-      // Always cache messages (for delete spy)
+      // ── Cache all incoming messages for delete spy ────────────────────────
       if (!isFromMe) {
         cacheMessage(msg);
+
+        // ── Fake presence (typing/recording simulator) ────────────────────
+        if (fakeTypeMode || fakeRecordMode) {
+          const targetJid = msg.key.participant ?? jid;
+          const mode = fakeRecordMode ? "recording" : "composing";
+          // Send presence to the chat (not to the sender specifically)
+          sock.sendPresenceUpdate(mode as any, jid).catch(() => {});
+        }
       }
 
-      // For messages sent BY the bot owner (fromMe), only process commands
-      // This lets the owner test commands from their own phone
+      // ── Owner: process commands from bot's own messages ───────────────────
       if (isFromMe) {
         if (text && text.startsWith(BOT_CONFIG.prefix)) {
-          console.log(`[CMD from owner] ${text}`);
+          console.log(`[CMD/owner] ${text}`);
           const commandText = text.slice(BOT_CONFIG.prefix.length);
           const cmd = commandText.split(/\s+/)[0]?.toLowerCase() ?? "";
           if (cmd === "status") {
-            const args = commandText.split(/\s+/);
-            await handleStatusGrab(sock, msg, args[1]);
+            await handleStatusGrab(sock, msg, commandText.split(/\s+/)[1]);
           } else {
             await handleCommand(sock, msg, commandText);
           }
@@ -118,16 +124,14 @@ export async function startBot() {
         continue;
       }
 
-      // For messages from others:
+      // ── Others: full message processing ──────────────────────────────────
       const hasViewOnce =
         !!msg.message.viewOnceMessage ||
         !!msg.message.viewOnceMessageV2 ||
         !!msg.message.viewOnceMessageV2Extension;
 
       if (hasViewOnce) {
-        console.log(`[VIEW-ONCE] from ${jid}`);
         await handleViewOnce(sock, msg);
-        continue;
       }
 
       if (!text) continue;
@@ -140,9 +144,14 @@ export async function startBot() {
 
         console.log(`[CMD] ${cmd} from ${jid}`);
 
+        // .vv = manual view-once unlock (reply to a view-once)
+        if (cmd === "vv") {
+          await handleVVCommand(sock, msg);
+          continue;
+        }
+
         if (cmd === "status") {
-          const args = commandText.split(/\s+/);
-          await handleStatusGrab(sock, msg, args[1]);
+          await handleStatusGrab(sock, msg, commandText.split(/\s+/)[1]);
         } else {
           await handleCommand(sock, msg, commandText);
         }

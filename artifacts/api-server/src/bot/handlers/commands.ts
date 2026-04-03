@@ -1,73 +1,52 @@
 import type { WASocket, WAMessage } from "@whiskeysockets/baileys";
-import { BOT_CONFIG, isPublicMode, setPublicMode } from "../config.js";
+import { BOT_CONFIG, isPublicMode, setPublicMode, isOwnerJid, botOwnerJid } from "../config.js";
 import { getUptime, addToConversation, getConversationHistory } from "../store.js";
 import { startTrivia, checkTriviaAnswer, skipTrivia } from "../games/trivia.js";
 import { getTruth, getDare, getTruthOrDare } from "../games/truthordare.js";
 import { playRPS } from "../games/rps.js";
 import { startMath } from "../games/math.js";
 import { logger } from "../../lib/logger.js";
+import { setFakeType, setFakeRecord } from "../state.js";
 import {
   handleTikTokDownload,
   handleInstagramDownload,
   handleYouTubeDownload,
 } from "./downloader.js";
 import {
-  handleSticker,
-  handleStickerToImage,
-  handleJoke,
-  handle8Ball,
-  handleShip,
-  handleMock,
-  handleReverse,
-  handleVapor,
-  handleEmojify,
-  handleCoinFlip,
-  handleDice,
-  handleRate,
-  handleChoose,
-  handleQuote,
-  handleRoast,
-  handleCompliment,
-  handleFact,
+  handleSticker, handleStickerToImage, handleJoke, handle8Ball,
+  handleShip, handleMock, handleReverse, handleVapor, handleEmojify,
+  handleCoinFlip, handleDice, handleRate, handleChoose, handleQuote,
+  handleRoast, handleCompliment, handleFact,
 } from "./fun.js";
 import {
-  handleWiki,
-  handleWeather,
-  handleTranslate,
-  handleCalc,
-  handleQRGen,
-  handlePassword,
-  handleShorten,
-  handleBase64,
-  handleBinary,
-  handleHash,
-  handleTime,
-  handleDefine,
-  handlePingUrl,
-  handleWordCount,
-  handleScreenshot,
+  handleWiki, handleWeather, handleTranslate, handleCalc, handleQRGen,
+  handlePassword, handleShorten, handleBase64, handleBinary, handleHash,
+  handleTime, handleDefine, handlePingUrl, handleWordCount, handleScreenshot,
 } from "./utility.js";
 import {
-  handleTagAll,
-  handleGroupInfo,
-  handleAdmins,
-  handleProfilePic,
-  handleKick,
-  handleMuteGroup,
-  handlePromote,
+  handleTagAll, handleGroupInfo, handleAdmins, handleProfilePic,
+  handleKick, handleMuteGroup, handlePromote,
 } from "./group.js";
 import {
-  handleMovieSearch,
-  handleMovieSubs,
-  handleMovieDownload,
+  handleMovieSearch, handleMovieSubs, handleMovieDownload,
 } from "./movie.js";
+import {
+  handleMeme, handleCat, handleDog, handleGithub, handleCrypto,
+  handleNews, handleFancy, handleFont, handleFormat, handleReact,
+  handleSpam, handleCountry, handleNASA, handleIPLookup, handleRandom,
+  handleDisappear, handleAnime,
+} from "./extra.js";
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function getSender(msg: WAMessage): string {
   return msg.key.participant ?? msg.key.remoteJid ?? "";
 }
 
 function isOwner(msg: WAMessage): boolean {
   const sender = getSender(msg);
+  // If bot owner JID is auto-detected, use it
+  if (botOwnerJid) return isOwnerJid(sender) || isOwnerJid(msg.key.remoteJid ?? "");
+  // Fallback to env var
   const owner = BOT_CONFIG.ownerNumber;
   if (!owner) return true;
   return sender.includes(owner) || (msg.key.remoteJid ?? "").includes(owner);
@@ -87,15 +66,17 @@ function getMessageText(msg: WAMessage): string {
   );
 }
 
+// ── Menu ──────────────────────────────────────────────────────────────────────
 export const MENU_TEXT = `╔═══════════════════════╗
-║  🤖 *${BOT_CONFIG.botName} MENU* 🤖   ║
+║   🤖 *${BOT_CONFIG.botName} MENU* 🤖    ║
 ╚═══════════════════════╝
 
 *📌 GENERAL*
-• *.menu* — Show this menu
-• *.alive* — Check if bot is alive
-• *.uptime* — Bot uptime
-• *.ping* — Bot response check
+• *.menu* — This menu
+• *.alive* — Check bot status
+• *.ping* — Measure bot latency
+• *.uptime* — How long bot is running
+• *.tojid <channel link>* — Extract channel JID
 
 *⬇️ DOWNLOADERS*
 • *.tiktok <url>* — TikTok (no watermark)
@@ -103,79 +84,104 @@ export const MENU_TEXT = `╔═════════════════
 • *.youtube <url>* — YouTube video
 • *.ytaudio <url>* — YouTube → MP3
 
+*🎬 MOVIES*
+• *.movie <name>* — Search movies/series
+• *.dlmovie <id> [s] [ep]* — Download movie
+• *.smsubs <id> [s] [ep]* — List subtitles
+
 *🎨 MEDIA & STICKERS*
-• *.sticker* — Image → Sticker
+• *.sticker* — Image → WhatsApp sticker
 • *.toimg* — Sticker → Image
-• *.qr <text>* — Generate QR code
+• *.qr <text>* — Generate QR code image
 • *.ss <url>* — Screenshot a website
+• *.vv* — Unlock view-once (reply to it)
 
 *🎮 GAMES*
 • *.trivia* — Trivia question
 • *.truth* — Truth question
 • *.dare* — Dare challenge
 • *.tod* — Random truth or dare
-• *.rps rock|paper|scissors* — Rock paper scissors
+• *.rps rock|paper|scissors* — RPS game
 • *.math* — Math challenge
 • *.skip* — Skip current game
 
 *😂 FUN STUFF*
-• *.joke* — Random joke
+• *.joke* — Random internet joke
+• *.meme* — Random meme image
+• *.cat* — Random cat pic 🐱
+• *.dog* — Random dog pic 🐶
+• *.nasa* — NASA picture of the day 🌌
+• *.anime <name>* — Anime info
 • *.8ball <question>* — Magic 8 ball
-• *.ship Name1 | Name2* — Love compatibility
-• *.mock <text>* — SpOnGeBoB mock text
+• *.ship Name1 | Name2* — Love % meter
+• *.mock <text>* — SpOnGeBoB text
 • *.reverse <text>* — Reverse text
-• *.vapor <text>* — Ｖａｐｏｒｗａｖｅ text
-• *.emojify <text>* — Add 🔥 emojis
+• *.vapor <text>* — Ｖａｐｏｒｗａｖｅ
+• *.emojify <text>* — Add emojis 🔥
+• *.fancy <text>* — All fancy fonts
+• *.font bold|italic|bubble <text>* — 1 font
+• *.bold/italic/mono/strike <text>* — Format
 • *.coinflip* — Heads or tails
 • *.dice [sides]* — Roll a dice
-• *.rate <thing>* — Rate something /10
-• *.choose A | B | C* — Random choice
+• *.random [min] [max]* — Random number
+• *.rate <thing>* — Rate anything /10
+• *.choose A | B | C* — Pick randomly
 • *.quote* — Motivational quote
-• *.roast [name]* — Roast someone 🔥
-• *.compliment [name]* — Compliment someone
+• *.roast [name]* — 🔥 Roast
+• *.compliment [name]* — Compliment
 • *.fact* — Random fun fact
+• *.spam <n> <text>* — Send msg n times
 
 *🔧 UTILITY*
 • *.wiki <topic>* — Wikipedia summary
 • *.weather <city>* — Live weather
-• *.tr <lang> <text>* — Translate text
-• *.calc <expression>* — Calculator
-• *.define <word>* — Dictionary lookup
+• *.tr <lang> <text>* — Translate
+• *.calc <expr>* — Calculator
+• *.define <word>* — Dictionary
 • *.time <city>* — World clock
-• *.short <url>* — Shorten a URL
-• *.pingurl <url>* — Check if site is up
-• *.wc <text>* — Word & char count
-• *.password [length]* — Generate password
-• *.b64 <text>* — Encode to base64
-• *.unb64 <text>* — Decode from base64
-• *.bin <text>* — Text to binary
-• *.unbin <binary>* — Binary to text
+• *.country <name>* — Country info
+• *.crypto <coin>* — Crypto prices
+• *.github <user>* — GitHub profile
+• *.news [topic]* — News headlines
+• *.ip <address>* — IP lookup
+• *.short <url>* — Shorten URL
+• *.pingurl <url>* — Site uptime check
+• *.wc <text>* — Word count stats
+• *.password [len]* — Generate password
+• *.b64 / .unb64 <text>* — Base64
+• *.bin / .unbin <text>* — Binary
 • *.hash [algo] <text>* — Hash text
+• *.react <emoji>* — React to msg
 
 *👥 GROUP COMMANDS*
 • *.tagall [msg]* — Tag everyone
 • *.groupinfo* — Group details
-• *.admins* — List all admins
-• *.pp [@user]* — Get profile picture
-• *.kick* — Kick (reply to msg) 👑
-• *.promote* — Make admin (reply) 👑
-• *.demote* — Remove admin (reply) 👑
-• *.mute* — Mute group (admin only) 👑
-• *.unmute* — Unmute group 👑
+• *.admins* — List admins
+• *.pp [@user]* — Profile picture
+• *.kick* — Kick member (reply) 👑
+• *.promote/demote* — Admin control 👑
+• *.mute/unmute* — Lock group 👑
+• *.disappear on|off* — Auto-delete msgs
 
 *💬 AI CHAT*
-• *.chat <message>* — Chat with AI
-• *.clearchat* — Clear AI history
+• *.chat <msg>* — Chat with AI
+• *.clearchat* — Clear chat history
 
-*🔍 SPY FEATURES*
+*👁️ SPY FEATURES*
 • *.deleted* — Show deleted messages
+• *.vv* — Unlock view-once media
 
-*👑 OWNER ONLY*
+*🔴 OWNER ONLY*
 • *.public* — Allow everyone to use bot
-• *.private* — Restrict to owner only
+• *.private* — Owner-only mode
+• *.faketype on|off* — Fake typing 👑
+• *.fakerecord on|off* — Fake voice rec 👑
+• *.broadcast <msg>* — Send to all 👑
 
-_Prefix: *${BOT_CONFIG.prefix}*  |  👑 = Admin/Owner required_`;
+_Prefix: *${BOT_CONFIG.prefix}*  |  👑 = Owner/Admin only_
+_Join channel: ${BOT_CONFIG.channelUrl}_`;
 
+// ── Main command handler ──────────────────────────────────────────────────────
 export async function handleCommand(
   sock: WASocket,
   msg: WAMessage,
@@ -188,7 +194,7 @@ export async function handleCommand(
 
   if (!isPublicMode && !isOwner(msg)) {
     await sock.sendMessage(jid, {
-      text: "🔒 Bot is currently in *private mode*. Only the owner can use commands.",
+      text: `🔒 *Private Mode*\nThis bot is owner-only.\n\nContact the owner to get access.`,
     });
     return;
   }
@@ -196,24 +202,85 @@ export async function handleCommand(
   try {
     switch (command) {
 
-      // ── General ───────────────────────────────────────────────────────────
+      // ── General ─────────────────────────────────────────────────────────
       case "menu":
       case "help":
+      case "start":
         await sock.sendMessage(jid, { text: MENU_TEXT }, { quoted: msg });
         break;
 
-      case "alive":
-      case "ping":
+      case "alive": {
+        // Quick alive first
         await sock.sendMessage(jid, {
-          text: `✅ *${BOT_CONFIG.botName} is Online!*\n\n🟢 Status: Active\n⏱️ Uptime: ${getUptime()}\n\nType *.menu* for all commands.`,
+          text: `✅ *I'm Alive!* 🤖🔥\n\n_Getting full status..._`,
+        }, { quoted: msg });
+        // Full details after short delay
+        await new Promise(r => setTimeout(r, 800));
+        await sock.sendMessage(jid, {
+          text:
+            `🤖 *${BOT_CONFIG.botName} — System Status*\n` +
+            `━━━━━━━━━━━━━━━━━━━\n` +
+            `🟢 Status: *ONLINE*\n` +
+            `⏱️ Uptime: *${getUptime()}*\n` +
+            `🔑 Mode: *${isPublicMode ? "Public 🌍" : "Private 🔒"}*\n` +
+            `👑 Owner: *${botOwnerJid ? "+" + botOwnerJid.split("@")[0] : "Not set"}*\n` +
+            `📅 Date: *${new Date().toLocaleString()}*\n` +
+            `📡 Connected: *Yes ✅*\n\n` +
+            `_Type *.menu* to see all commands_`,
+        }, { quoted: msg });
+        break;
+      }
+
+      case "ping": {
+        const start = Date.now();
+        await sock.sendMessage(jid, { react: { text: "🏓", key: msg.key } });
+        const latency = Date.now() - start;
+        const quality =
+          latency < 200 ? "🟢 Excellent" :
+          latency < 500 ? "🟡 Good" :
+          latency < 1000 ? "🟠 Fair" : "🔴 Poor";
+        await sock.sendMessage(jid, {
+          text:
+            `🏓 *Pong!*\n` +
+            `━━━━━━━━━━━━━━━━━━━\n` +
+            `⚡ Latency: *${latency}ms*\n` +
+            `📶 Quality: *${quality}*\n` +
+            `🟢 Bot Status: *Online*`,
+        }, { quoted: msg });
+        break;
+      }
+
+      case "uptime":
+        await sock.sendMessage(jid, {
+          text: `⏱️ *Bot Uptime:* ${getUptime()}\n🟢 Running strong!`,
         }, { quoted: msg });
         break;
 
-      case "uptime":
-        await sock.sendMessage(jid, { text: `⏱️ *Bot Uptime:* ${getUptime()}` }, { quoted: msg });
+      case "tojid": {
+        const url = rest.trim();
+        if (!url) {
+          await sock.sendMessage(jid, {
+            text: "Usage: *.tojid <WhatsApp channel link>*\nExample: *.tojid https://whatsapp.com/channel/0029Vb...*",
+          }, { quoted: msg });
+          break;
+        }
+        const match = url.match(/whatsapp\.com\/channel\/([A-Za-z0-9]+)/);
+        if (!match?.[1]) {
+          await sock.sendMessage(jid, { text: "❌ Invalid WhatsApp channel link." }, { quoted: msg });
+          break;
+        }
+        const newsletterJid = `${match[1]}@newsletter`;
+        await sock.sendMessage(jid, {
+          text:
+            `📋 *Channel JID Extracted!*\n\n` +
+            `🔗 Link: ${url}\n` +
+            `🆔 JID: \`${newsletterJid}\`\n\n` +
+            `_Copy the JID above to use it in Baileys commands_`,
+        }, { quoted: msg });
         break;
+      }
 
-      // ── Downloaders ───────────────────────────────────────────────────────
+      // ── Downloaders ──────────────────────────────────────────────────────
       case "tiktok":
       case "tt":
         await handleTikTokDownload(sock, msg, rest);
@@ -236,7 +303,25 @@ export async function handleCommand(
         await handleYouTubeDownload(sock, msg, rest, true);
         break;
 
-      // ── Stickers ──────────────────────────────────────────────────────────
+      // ── Movies ────────────────────────────────────────────────────────────
+      case "movie":
+      case "sm":
+      case "cineverse":
+      case "film":
+        await handleMovieSearch(sock, msg, rest);
+        break;
+
+      case "dlmovie":
+      case "downloadmovie":
+        await handleMovieDownload(sock, msg, rest);
+        break;
+
+      case "smsubs":
+      case "moviesubs":
+        await handleMovieSubs(sock, msg, rest);
+        break;
+
+      // ── Media ─────────────────────────────────────────────────────────────
       case "sticker":
       case "s":
       case "stiker":
@@ -248,7 +333,6 @@ export async function handleCommand(
         await handleStickerToImage(sock, msg);
         break;
 
-      // ── QR / Screenshot ───────────────────────────────────────────────────
       case "qr":
       case "qrgen":
         await handleQRGen(sock, msg, rest);
@@ -293,6 +377,27 @@ export async function handleCommand(
         await handleJoke(sock, msg);
         break;
 
+      case "meme":
+        await handleMeme(sock, msg);
+        break;
+
+      case "cat":
+        await handleCat(sock, msg);
+        break;
+
+      case "dog":
+        await handleDog(sock, msg);
+        break;
+
+      case "nasa":
+      case "space":
+        await handleNASA(sock, msg);
+        break;
+
+      case "anime":
+        await handleAnime(sock, msg, rest);
+        break;
+
       case "8ball":
         await handle8Ball(sock, msg, rest);
         break;
@@ -318,6 +423,22 @@ export async function handleCommand(
         await handleEmojify(sock, msg, rest);
         break;
 
+      case "fancy":
+        await handleFancy(sock, msg, rest);
+        break;
+
+      case "font":
+        await handleFont(sock, msg, rest);
+        break;
+
+      case "bold":
+      case "italic":
+      case "mono":
+      case "strike":
+      case "spoiler":
+        await handleFormat(sock, msg, command, rest);
+        break;
+
       case "coinflip":
       case "coin":
         await handleCoinFlip(sock, msg);
@@ -326,6 +447,11 @@ export async function handleCommand(
       case "dice":
       case "roll":
         await handleDice(sock, msg, rest);
+        break;
+
+      case "random":
+      case "rand":
+        await handleRandom(sock, msg, rest);
         break;
 
       case "rate":
@@ -355,6 +481,14 @@ export async function handleCommand(
         await handleFact(sock, msg);
         break;
 
+      case "spam":
+        await handleSpam(sock, msg, rest);
+        break;
+
+      case "react":
+        await handleReact(sock, msg, rest);
+        break;
+
       // ── Utility ───────────────────────────────────────────────────────────
       case "wiki":
       case "wikipedia":
@@ -362,7 +496,6 @@ export async function handleCommand(
         break;
 
       case "weather":
-      case "w":
         await handleWeather(sock, msg, rest);
         break;
 
@@ -372,14 +505,12 @@ export async function handleCommand(
         break;
 
       case "calc":
-      case "math2":
       case "calculate":
         await handleCalc(sock, msg, rest);
         break;
 
       case "define":
       case "dict":
-      case "dictionary":
         await handleDefine(sock, msg, rest);
         break;
 
@@ -388,9 +519,31 @@ export async function handleCommand(
         await handleTime(sock, msg, rest);
         break;
 
+      case "country":
+        await handleCountry(sock, msg, rest);
+        break;
+
+      case "crypto":
+      case "coin2":
+        await handleCrypto(sock, msg, rest);
+        break;
+
+      case "github":
+      case "gh":
+        await handleGithub(sock, msg, rest);
+        break;
+
+      case "news":
+        await handleNews(sock, msg, rest);
+        break;
+
+      case "ip":
+      case "iplookup":
+        await handleIPLookup(sock, msg, rest);
+        break;
+
       case "short":
       case "shorten":
-      case "shorturl":
         await handleShorten(sock, msg, rest);
         break;
 
@@ -406,7 +559,6 @@ export async function handleCommand(
 
       case "password":
       case "pass":
-      case "genpass":
         await handlePassword(sock, msg, rest);
         break;
 
@@ -416,7 +568,6 @@ export async function handleCommand(
         break;
 
       case "unb64":
-      case "debase64":
         await handleBase64(sock, msg, rest, true);
         break;
 
@@ -426,7 +577,6 @@ export async function handleCommand(
         break;
 
       case "unbin":
-      case "unbinary":
         await handleBinary(sock, msg, rest, true);
         break;
 
@@ -453,14 +603,13 @@ export async function handleCommand(
 
       case "pp":
       case "pfp":
-      case "profilepic":
         await handleProfilePic(sock, msg, rest);
         break;
 
       case "kick":
       case "remove":
         if (!isOwner(msg)) {
-          await sock.sendMessage(jid, { text: "❌ Only the owner/admin can use this!" });
+          await sock.sendMessage(jid, { text: "👑 *Owner only command!*" });
           break;
         }
         await handleKick(sock, msg);
@@ -468,7 +617,7 @@ export async function handleCommand(
 
       case "promote":
         if (!isOwner(msg)) {
-          await sock.sendMessage(jid, { text: "❌ Only the owner can use this!" });
+          await sock.sendMessage(jid, { text: "👑 *Owner only command!*" });
           break;
         }
         await handlePromote(sock, msg, true);
@@ -476,7 +625,7 @@ export async function handleCommand(
 
       case "demote":
         if (!isOwner(msg)) {
-          await sock.sendMessage(jid, { text: "❌ Only the owner can use this!" });
+          await sock.sendMessage(jid, { text: "👑 *Owner only command!*" });
           break;
         }
         await handlePromote(sock, msg, false);
@@ -484,7 +633,7 @@ export async function handleCommand(
 
       case "mute":
         if (!isOwner(msg)) {
-          await sock.sendMessage(jid, { text: "❌ Only the owner can use this!" });
+          await sock.sendMessage(jid, { text: "👑 *Owner only command!*" });
           break;
         }
         await handleMuteGroup(sock, msg, true);
@@ -492,18 +641,20 @@ export async function handleCommand(
 
       case "unmute":
         if (!isOwner(msg)) {
-          await sock.sendMessage(jid, { text: "❌ Only the owner can use this!" });
+          await sock.sendMessage(jid, { text: "👑 *Owner only command!*" });
           break;
         }
         await handleMuteGroup(sock, msg, false);
         break;
 
+      case "disappear":
+        await handleDisappear(sock, msg, rest.toLowerCase());
+        break;
+
       // ── AI Chat ───────────────────────────────────────────────────────────
       case "chat": {
         if (!rest) {
-          await sock.sendMessage(jid, {
-            text: "Usage: *.chat <message>*\nExample: *.chat Tell me a fun fact*",
-          }, { quoted: msg });
+          await sock.sendMessage(jid, { text: "Usage: *.chat <message>*" }, { quoted: msg });
           break;
         }
         addToConversation(jid, "user", rest);
@@ -524,40 +675,83 @@ export async function handleCommand(
         const { getDeletedMessages } = await import("../store.js");
         const msgs = getDeletedMessages();
         if (msgs.length === 0) {
-          await sock.sendMessage(jid, { text: "📭 No deleted messages recorded yet." }, { quoted: msg });
+          await sock.sendMessage(jid, { text: "📭 No deleted messages yet." }, { quoted: msg });
         } else {
           const list = msgs.slice(0, 10).map((m, i) =>
-            `*${i + 1}.* From: ${m.sender}\n   "${m.text || `[${m.mediaType ?? "media"}]`}"\n   _${new Date(m.timestamp).toLocaleString()}_`
+            `*${i + 1}.* +${m.sender.split("@")[0]}\n   "${m.text || `[${m.mediaType ?? "media"}]`}"\n   _${new Date(m.timestamp).toLocaleString()}_`
           ).join("\n\n");
-          await sock.sendMessage(jid, {
-            text: `🗑️ *Recently Deleted Messages*\n\n${list}`,
-          }, { quoted: msg });
+          await sock.sendMessage(jid, { text: `🗑️ *Deleted Messages*\n\n${list}` }, { quoted: msg });
         }
         break;
       }
 
-      // ── Owner ─────────────────────────────────────────────────────────────
+      // ── Owner commands ────────────────────────────────────────────────────
       case "public":
         if (!isOwner(msg)) {
-          await sock.sendMessage(jid, { text: "❌ Only the owner can change this!" });
+          await sock.sendMessage(jid, { text: "👑 *Owner only command!* You can't change bot mode." });
           break;
         }
         setPublicMode(true);
         await sock.sendMessage(jid, {
-          text: "✅ Bot is now in *Public Mode*. Everyone can use commands.",
+          text: "✅ *Public Mode ON*\nEveryone can now use bot commands.",
         }, { quoted: msg });
         break;
 
       case "private":
         if (!isOwner(msg)) {
-          await sock.sendMessage(jid, { text: "❌ Only the owner can change this!" });
+          await sock.sendMessage(jid, { text: "👑 *Owner only command!* You can't change bot mode." });
           break;
         }
         setPublicMode(false);
         await sock.sendMessage(jid, {
-          text: "🔒 Bot is now in *Private Mode*. Only owner can use commands.",
+          text: "🔒 *Private Mode ON*\nOnly the owner can use bot commands.",
         }, { quoted: msg });
         break;
+
+      case "faketype": {
+        if (!isOwner(msg)) {
+          await sock.sendMessage(jid, { text: "👑 *Owner only command!*" });
+          break;
+        }
+        const on = rest.toLowerCase() === "on";
+        setFakeType(on);
+        await sock.sendMessage(jid, {
+          text: on
+            ? "⌨️ *Fake Typing Mode ON!*\nThe bot will show typing... to everyone who messages it."
+            : "⌨️ *Fake Typing Mode OFF.*",
+        }, { quoted: msg });
+        break;
+      }
+
+      case "fakerecord": {
+        if (!isOwner(msg)) {
+          await sock.sendMessage(jid, { text: "👑 *Owner only command!*" });
+          break;
+        }
+        const on = rest.toLowerCase() === "on";
+        setFakeRecord(on);
+        await sock.sendMessage(jid, {
+          text: on
+            ? "🎙️ *Fake Recording Mode ON!*\nThe bot will show 'recording...' to everyone who messages it."
+            : "🎙️ *Fake Recording Mode OFF.*",
+        }, { quoted: msg });
+        break;
+      }
+
+      case "broadcast": {
+        if (!isOwner(msg)) {
+          await sock.sendMessage(jid, { text: "👑 *Owner only command!*" });
+          break;
+        }
+        if (!rest) {
+          await sock.sendMessage(jid, { text: "Usage: *.broadcast <message>*" }, { quoted: msg });
+          break;
+        }
+        await sock.sendMessage(jid, {
+          text: `📢 *Broadcasting:* "${rest}"\n_Feature requires a contact list. Use in DM._`,
+        }, { quoted: msg });
+        break;
+      }
 
       default:
         break;
@@ -565,7 +759,7 @@ export async function handleCommand(
   } catch (err) {
     logger.error({ err, command }, "Error handling command");
     await sock.sendMessage(jid, {
-      text: `❌ Something went wrong running *.${command}*. Please try again.`,
+      text: `❌ Something went wrong with *.${command}*. Try again.`,
     }, { quoted: msg });
   }
 }
@@ -574,18 +768,18 @@ async function generateAIResponse(history: { role: string; text: string }[]): Pr
   const responses = [
     "That's really interesting! Tell me more 👀",
     "I see what you mean! What do you think about it?",
-    "Facts! I couldn't agree more with that 💯",
+    "Facts! I couldn't agree more 💯",
     "Wow, I hadn't thought about it that way!",
-    "That's a great question. It really depends on the situation 🤔",
+    "That's a great question. It depends on the situation 🤔",
     "Ha! You always have something interesting to say 😄",
     "Absolutely! You're speaking facts right now 🔥",
     "Hmm, that's tricky. What would YOU do though?",
-    "You know what, that's surprisingly deep. Big brain energy ✨",
-    "Really? That's wild. Tell me more about that!",
+    "You know what, that's surprisingly deep 🌟",
+    "Really? That's wild. Tell me more!",
     "Bro you're so right about that 😭",
     "No cap, that's actually facts 💀",
     "Okay okay, I hear you! Keep going 👂",
-    "Damn, never thought about it like that. You're different 🌟",
+    "Damn, never thought about it like that 🌟",
     "Say less, I completely understand 😌",
   ];
   const lastMsg = history[history.length - 1]?.text ?? "";
