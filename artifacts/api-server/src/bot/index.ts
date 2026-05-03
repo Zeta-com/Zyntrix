@@ -12,19 +12,19 @@ import qrcode from "qrcode-terminal";
 import fs from "fs";
 import { logger } from "../lib/logger.js";
 import { BOT_CONFIG, setBotOwnerJid } from "./config.js";
-import { fakeTypeMode, fakeRecordMode } from "./state.js";
+import { fakeTypeMode, fakeRecordMode, isChatbotOn } from "./state.js";
 import { setQR, setConnected } from "./qrstore.js";
 import { cacheMessage, handleDeletedMessage } from "./handlers/messageDelete.js";
 import { handleViewOnce, handleVVCommand } from "./handlers/viewOnce.js";
 import { handleStatusGrab } from "./handlers/status.js";
 import { handleCommand, getMessageText, getJid } from "./handlers/commands.js";
+import { fetchMetaAI } from "./handlers/ai.js";
 import { hasActiveTrivia, checkTriviaAnswer } from "./games/trivia.js";
 import { hasActiveMath, checkMathAnswer } from "./games/math.js";
 import { sendCTA } from "./helpers/cta.js";
+import { startTelegramBot } from "./telegram/bot.js";
 
-// ──────────────────────────────────────────────────────────────
-// Intercepts sock.sendMessage to send text-only messages as CTA
-// ──────────────────────────────────────────────────────────────
+// ── Patch sock.sendMessage: text-only → CTA forwarded style ──────────────────
 function patchSockForCTA(sock: WASocket): WASocket {
   const original = sock.sendMessage.bind(sock);
 
@@ -64,9 +64,6 @@ function patchSockForCTA(sock: WASocket): WASocket {
   return sock;
 }
 
-// ──────────────────────────────────────────────────────────────
-// Main bot start function
-// ──────────────────────────────────────────────────────────────
 export async function startBot() {
   if (!fs.existsSync(BOT_CONFIG.sessionDir)) {
     fs.mkdirSync(BOT_CONFIG.sessionDir, { recursive: true });
@@ -104,10 +101,6 @@ export async function startBot() {
       console.log("\n📱 Scan the QR above or open /api/qr in your browser.\n");
     }
 
-    if (connection === "connecting") {
-      console.log("⏳ Connecting to WhatsApp...");
-    }
-
     if (connection === "close") {
       const shouldReconnect =
         (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
@@ -115,10 +108,9 @@ export async function startBot() {
       logger.info({ shouldReconnect }, "Connection closed");
 
       if (shouldReconnect) {
-        console.log("🔄 Reconnecting...");
         setTimeout(() => startBot(), 5000);
       } else {
-        console.log("⚠️ Logged out — deleting session...");
+        logger.warn("Logged out — deleting session and restarting.");
         if (fs.existsSync(BOT_CONFIG.sessionDir)) {
           fs.rmSync(BOT_CONFIG.sessionDir, { recursive: true });
         }
@@ -126,11 +118,7 @@ export async function startBot() {
       }
     } else if (connection === "open") {
       setConnected();
-
-      if (sock.user?.id) {
-        setBotOwnerJid(sock.user.id);
-      }
-
+      if (sock.user?.id) setBotOwnerJid(sock.user.id);
       console.log(`\n✅ ${BOT_CONFIG.botName} is ONLINE! Owner: ${sock.user?.id ?? "unknown"}\n`);
     }
   });
@@ -142,26 +130,23 @@ export async function startBot() {
       if (!msg.message) continue;
 
       const text = getMessageText(msg);
-      const jid = getJid(msg);
+      const chatJid = getJid(msg);
+      const sender = msg.key.participant ?? msg.key.remoteJid ?? "";
       const isFromMe = msg.key.fromMe === true;
+      const isGroup = chatJid.endsWith("@g.us");
 
       if (!isFromMe) {
         cacheMessage(msg);
 
         // Fake typing / recording
-        try {
-          if (fakeTypeMode || fakeRecordMode) {
-            const mode = fakeRecordMode ? "recording" : "composing";
-            await sock.sendPresenceUpdate(mode as any, jid);
-          }
-        } catch (err) {
-          logger.warn({ err }, "Failed to update fake presence");
+        if (fakeTypeMode || fakeRecordMode) {
+          sock.sendPresenceUpdate(fakeRecordMode ? "recording" : "composing" as any, chatJid).catch(() => {});
         }
       }
 
+      // Owner typing their own commands
       if (isFromMe) {
         if (text && text.startsWith(BOT_CONFIG.prefix)) {
-          console.log(`[CMD/owner] ${text}`);
           const commandText = text.slice(BOT_CONFIG.prefix.length);
           const cmd = commandText.split(/\s+/)[0]?.toLowerCase() ?? "";
           if (cmd === "status") {
@@ -179,25 +164,16 @@ export async function startBot() {
         !!msg.message.viewOnceMessageV2 ||
         !!msg.message.viewOnceMessageV2Extension;
 
-      if (hasViewOnce) {
-        await handleViewOnce(sock, msg);
-      }
+      if (hasViewOnce) await handleViewOnce(sock, msg);
 
       if (!text) continue;
 
-      console.log(`[MSG] ${jid}: ${text.slice(0, 80)}`);
-
+      // ── Command handling ────────────────────────────────────────────────
       if (text.startsWith(BOT_CONFIG.prefix)) {
         const commandText = text.slice(BOT_CONFIG.prefix.length);
         const cmd = commandText.split(/\s+/)[0]?.toLowerCase() ?? "";
 
-        console.log(`[CMD] ${cmd} from ${jid}`);
-
-        if (cmd === "vv") {
-          await handleVVCommand(sock, msg);
-          continue;
-        }
-
+        if (cmd === "vv") { await handleVVCommand(sock, msg); continue; }
         if (cmd === "status") {
           await handleStatusGrab(sock, msg, commandText.split(/\s+/)[1]);
         } else {
@@ -206,29 +182,45 @@ export async function startBot() {
         continue;
       }
 
-      if (hasActiveTrivia(jid)) {
-        const result = checkTriviaAnswer(jid, text);
-        if (result) {
-          await sock.sendMessage(jid, { text: result }, { quoted: msg });
-          continue;
-        }
+      // ── Active game checks ──────────────────────────────────────────────
+      if (hasActiveTrivia(chatJid)) {
+        const result = checkTriviaAnswer(chatJid, text);
+        if (result) { await sock.sendMessage(chatJid, { text: result }, { quoted: msg }); continue; }
       }
 
-      if (hasActiveMath(jid)) {
-        const result = checkMathAnswer(jid, text);
-        if (result) {
-          await sock.sendMessage(jid, { text: result }, { quoted: msg });
-          continue;
-        }
+      if (hasActiveMath(chatJid)) {
+        const result = checkMathAnswer(chatJid, text);
+        if (result) { await sock.sendMessage(chatJid, { text: result }, { quoted: msg }); continue; }
+      }
+
+      // ── Chatbot auto-reply (Meta AI) ────────────────────────────────────
+      if (isChatbotOn(chatJid)) {
+        try {
+          const aiResponse = await fetchMetaAI(text);
+          if (isGroup && sender) {
+            const senderNum = sender.split("@")[0];
+            await sock.sendMessage(chatJid, {
+              text: `@${senderNum} ${aiResponse}`,
+              mentions: [sender],
+            } as any, { quoted: msg });
+          } else {
+            await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
+          }
+        } catch {}
       }
     }
   });
 
   sock.ev.on("messages.delete", async (update) => {
-    if ("keys" in update) {
-      await handleDeletedMessage(sock, update);
-    }
+    if ("keys" in update) await handleDeletedMessage(sock, update);
   });
+
+  // Start Telegram bot manager (non-blocking)
+  try {
+    startTelegramBot();
+  } catch (e: any) {
+    console.log("[Telegram] Skipped:", e.message);
+  }
 
   return sock;
 }
