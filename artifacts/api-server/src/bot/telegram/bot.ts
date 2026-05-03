@@ -10,13 +10,13 @@ import fs from "fs";
 import path from "path";
 import pino from "pino";
 import { setBotOwnerJid } from "../config.js";
+import { patchSockForCTA, attachBotHandlers } from "../handlers/setup.js";
 
 const TOKEN = process.env["TELEGRAM_BOT_TOKEN"] ?? "";
 const SESSIONS_DIR = "./sessions";
 
 if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
-// Active socket registry: telegramChatId → WASocket
 const activeSockets = new Map<string, any>();
 const qrMessages = new Map<number, number>();
 const userState: Record<number, string> = {};
@@ -58,7 +58,11 @@ export async function startTelegramBot() {
   bot.onText(/\/status/, (msg) => {
     const id = String(msg.chat.id);
     const active = activeSockets.has(id);
-    bot.sendMessage(msg.chat.id, active ? "✅ *WhatsApp is connected!*" : "❌ *Not connected.* Use /start to link.", { parse_mode: "Markdown" });
+    bot.sendMessage(
+      msg.chat.id,
+      active ? "✅ *WhatsApp is connected!*\n\nSend *.menu* on WhatsApp to see all commands." : "❌ *Not connected.* Use /start to link.",
+      { parse_mode: "Markdown" }
+    );
   });
   bot.onText(/\/disconnect/, (msg) => {
     const id = String(msg.chat.id);
@@ -89,7 +93,7 @@ export async function startTelegramBot() {
     if (q.data === "help") {
       return bot.sendMessage(
         chatId,
-        `❓ *How to connect:*\n\n*Option 1 — QR Code:*\nTap "Link via QR Code", scan the QR in WhatsApp → Linked Devices\n\n*Option 2 — Phone Number:*\nTap "Link via Phone Number", send your number, then enter the code in WhatsApp → Linked Devices → Link with phone number\n\nAfter linking, send *.menu* on WhatsApp to get started!`,
+        `❓ *How to connect:*\n\n*Option 1 — QR Code:*\nTap "Link via QR Code", scan in WhatsApp → Linked Devices\n\n*Option 2 — Phone Number:*\nTap "Link via Phone Number", send your number, enter the code in WhatsApp → Linked Devices → Link with phone number\n\nAfter linking, send *.menu* on WhatsApp!`,
         { parse_mode: "Markdown" }
       );
     }
@@ -113,7 +117,7 @@ export async function startTelegramBot() {
     if (userState[chatId] === "WAITING_NUM" && msg.text && !msg.text.startsWith("/")) {
       const number = msg.text.replace(/[^0-9]/g, "");
       if (number.length < 10) {
-        bot.sendMessage(chatId, "❌ Invalid number format. Try again:");
+        bot.sendMessage(chatId, "❌ Invalid number. Send again with country code:");
         return;
       }
       delete userState[chatId];
@@ -121,7 +125,7 @@ export async function startTelegramBot() {
       if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true });
       bot.sendMessage(
         chatId,
-        `🔄 *Processing +${number}...*\n\n1. Open WhatsApp\n2. Tap ⋮ → Linked Devices → Link a Device\n3. Tap "Link with phone number"\n4. Enter the code when it appears below...`,
+        `🔄 *Processing +${number}...*\n\n1. Open WhatsApp\n2. Tap ⋮ → Linked Devices → Link a Device\n3. Tap "Link with phone number"\n4. Wait for the code below...`,
         { parse_mode: "Markdown" }
       );
       startWhatsAppSession(bot, chatId, number, true);
@@ -129,7 +133,7 @@ export async function startTelegramBot() {
   });
 }
 
-// ── Initiate QR link ─────────────────────────────────────────────────────────
+// ── Initiate QR link ──────────────────────────────────────────────────────────
 async function handleQRLink(bot: TelegramBot, chatId: number) {
   const sessionId = String(chatId);
   if (activeSockets.has(sessionId)) {
@@ -145,7 +149,7 @@ async function handleQRLink(bot: TelegramBot, chatId: number) {
   startWhatsAppSession(bot, chatId, sessionId, false);
 }
 
-// ── Core WhatsApp session starter ─────────────────────────────────────────────
+// ── Core: start a WhatsApp session and wire up ALL bot handlers ───────────────
 async function startWhatsAppSession(
   bot: TelegramBot,
   tgChatId: number,
@@ -164,7 +168,7 @@ async function startWhatsAppSession(
       version = [2, 3000, 1015901307];
     }
 
-    const sock = makeWASocket({
+    const rawSock = makeWASocket({
       version,
       logger: pino({ level: "silent" }) as any,
       printQRInTerminal: false,
@@ -173,12 +177,14 @@ async function startWhatsAppSession(
         keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }) as any),
       },
       browser: ["Ubuntu", "Chrome", "20.0.04"],
-      markOnlineOnConnect: false,
+      markOnlineOnConnect: true,
       generateHighQualityLinkPreview: true,
       syncFullHistory: false,
       connectTimeoutMs: 60000,
     });
 
+    // Apply CTA patch so all text replies get the forwarded+channel style
+    const sock = patchSockForCTA(rawSock);
     activeSockets.set(identifier, sock);
 
     // ── Pairing code ─────────────────────────────────────────────────────────
@@ -189,7 +195,7 @@ async function startWhatsAppSession(
           const formatted = code?.match(/.{1,4}/g)?.join("-") ?? code;
           bot.sendMessage(
             tgChatId,
-            `🔑 *Your WhatsApp Code:*\n\`${formatted}\`\n\n_Tap to copy, then enter it in WhatsApp Linked Devices_`,
+            `🔑 *Your WhatsApp Code:*\n\`${formatted}\`\n\n_Tap to copy, then enter it in WhatsApp → Linked Devices_`,
             { parse_mode: "Markdown" }
           );
         } catch (e: any) {
@@ -203,7 +209,7 @@ async function startWhatsAppSession(
     sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
-      // ── QR Code ──────────────────────────────────────────────────────────
+      // ── Send QR to Telegram ───────────────────────────────────────────────
       if (qr && !usePairing) {
         qrCount++;
         if (qrCount > 5) {
@@ -225,7 +231,7 @@ async function startWhatsAppSession(
         }
       }
 
-      // ── Disconnected ─────────────────────────────────────────────────────
+      // ── Disconnected ──────────────────────────────────────────────────────
       if (connection === "close") {
         const reason = (lastDisconnect?.error as any)?.output?.statusCode;
         console.log(`[TG-WA] Closed: ${identifier}, reason: ${reason}`);
@@ -238,22 +244,27 @@ async function startWhatsAppSession(
         }
       }
 
-      // ── Connected ────────────────────────────────────────────────────────
+      // ── Connected — wire up ALL command handlers ──────────────────────────
       if (connection === "open") {
-        console.log(`[TG-WA] Connected: ${identifier}`);
+        console.log(`[TG-WA] Connected: ${identifier} ✅`);
 
-        // Auto-register owner
+        // Auto-set owner from connected number
         const myNumber = sock.user?.id?.split(":")[0]?.split("@")[0] ?? "";
         if (myNumber) setBotOwnerJid(sock.user!.id);
 
+        // Delete QR message
         const prev = qrMessages.get(tgChatId);
         if (prev) { bot.deleteMessage(tgChatId, prev).catch(() => {}); qrMessages.delete(tgChatId); }
 
+        // Notify user
         bot.sendMessage(
           tgChatId,
-          `✅ *WhatsApp Connected!*\n\n👑 You are now the bot owner.\n📱 Number: +${myNumber}\n\nSend *.menu* on WhatsApp to get started! 🚀`,
+          `✅ *WhatsApp Connected!*\n\n👑 Owner: +${myNumber}\n\nSend *.menu* on WhatsApp — all commands are now active! 🚀`,
           { parse_mode: "Markdown" }
         ).catch(() => {});
+
+        // ✅ THIS IS THE KEY FIX — attach full command handler to this socket
+        attachBotHandlers(sock);
       }
     });
 
