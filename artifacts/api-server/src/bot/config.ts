@@ -8,21 +8,27 @@ export const BOT_CONFIG = {
 
 export let isPublicMode = true;
 
-// Auto-set when the bot connects — stores the bot's own JID as owner
 export let botOwnerJid = "";
+export let botOwnerName = "Owner";
 
 export function setPublicMode(mode: boolean) {
   isPublicMode = mode;
 }
 
 export function setBotOwnerJid(jid: string) {
-  // Normalize: remove device suffix (e.g. 234xxx:12@s.whatsapp.net → 234xxx@s.whatsapp.net)
   botOwnerJid = jid.replace(/:\d+/, "");
-  console.log(`[Bot] Owner auto-detected: ${botOwnerJid}`);
+  console.log(`[Bot] Owner JID set: ${botOwnerJid}`);
+}
+
+export function setOwnerNumber(number: string, name?: string) {
+  const clean = number.replace(/[^0-9]/g, "");
+  botOwnerJid = `${clean}@s.whatsapp.net`;
+  if (name) botOwnerName = name;
+  console.log(`[Bot] Owner manually set: ${botOwnerJid}`);
 }
 
 export function isOwnerJid(jid: string): boolean {
-  if (!botOwnerJid && !BOT_CONFIG.ownerNumber) return true; // No owner set → treat all as owner
+  if (!botOwnerJid && !BOT_CONFIG.ownerNumber) return true;
   const clean = jid.replace(/:\d+/, "");
   if (botOwnerJid && clean === botOwnerJid) return true;
   if (BOT_CONFIG.ownerNumber && clean.includes(BOT_CONFIG.ownerNumber)) return true;

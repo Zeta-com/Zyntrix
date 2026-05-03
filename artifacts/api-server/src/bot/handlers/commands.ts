@@ -1,5 +1,6 @@
 import type { WASocket, WAMessage } from "@whiskeysockets/baileys";
 import * as config from "../config.js";
+import { setOwnerNumber } from "../config.js";
 import { getUptime } from "../store.js";
 import { startTrivia, checkTriviaAnswer, skipTrivia } from "../games/trivia.js";
 import { getTruth, getDare, getTruthOrDare } from "../games/truthordare.js";
@@ -87,6 +88,8 @@ function buildMenu(senderName: string, chatJid: string): string {
 ┗❐
 
 ┏❐ 《 *OWNER MENU* 》 ❐
+┃├◆ ${p}setowner [number] [name?]
+┃├◆ ${p}owner
 ┃├◆ ${p}public / ${p}private
 ┃├◆ ${p}faketype on/off
 ┃├◆ ${p}fakerecord on/off
@@ -220,7 +223,56 @@ export async function handleCommand(
         }, { quoted: msg });
         break;
 
-      // ── OWNER MODE ─────────────────────────────────────────────────────────
+      // ── OWNER MANAGEMENT ───────────────────────────────────────────────────
+      case "setowner": {
+        if (!rest) {
+          await sock.sendMessage(jid, {
+            text: `👑 *Set Owner*\n\nUsage: \`.setowner <number> [name]\`\nExample: \`.setowner 2349031646071 David\`\n\n_Number must include country code, no + sign._`,
+          }, { quoted: msg });
+          break;
+        }
+        const soArgs = rest.trim().split(/\s+/);
+        const soNum = soArgs[0]!.replace(/[^0-9]/g, "");
+        const soName = soArgs.slice(1).join(" ") || "Owner";
+        if (soNum.length < 7) {
+          await sock.sendMessage(jid, { text: "❌ Invalid number. Include country code (e.g. 2349031646071)" }, { quoted: msg });
+          break;
+        }
+        setOwnerNumber(soNum, soName);
+        await sock.sendMessage(jid, {
+          text: `✅ *Owner Set!*\n\n👤 Name: *${soName}*\n📱 Number: *+${soNum}*\n\n_Only this number can now use owner commands._`,
+        }, { quoted: msg });
+        break;
+      }
+
+      case "owner": {
+        const ownerNum = config.botOwnerJid
+          ? config.botOwnerJid.replace("@s.whatsapp.net", "")
+          : config.BOT_CONFIG.ownerNumber;
+        if (!ownerNum) {
+          await sock.sendMessage(jid, {
+            text: `👑 *No owner set yet.*\nUse \`.setowner <number>\` to set one.`,
+          }, { quoted: msg });
+          break;
+        }
+        const ownerName = config.botOwnerName || "Owner";
+        const vcard =
+          `BEGIN:VCARD\n` +
+          `VERSION:3.0\n` +
+          `FN:${ownerName}\n` +
+          `ORG:${config.BOT_CONFIG.botName};\n` +
+          `TEL;type=CELL;type=VOICE;waid=${ownerNum}:+${ownerNum}\n` +
+          `END:VCARD`;
+        await sock.sendMessage(jid, {
+          contacts: {
+            displayName: ownerName,
+            contacts: [{ vcard }],
+          },
+        } as any, { quoted: msg });
+        break;
+      }
+
+      // ── MODE CONTROL ───────────────────────────────────────────────────────
       case "public":
         if (!isOwner(msg)) { await sock.sendMessage(jid, { text: "👑 *Owner only!*" }, { quoted: msg }); break; }
         config.setPublicMode(true);

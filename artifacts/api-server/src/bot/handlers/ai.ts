@@ -1,22 +1,16 @@
 import type { WASocket, WAMessage } from "@whiskeysockets/baileys";
 import axios from "axios";
 
-const DC_BASE = "https://apis.davidcyril.name.ng";
-
 function jid(msg: WAMessage) { return msg.key.remoteJid!; }
 
-/** Parse the response from David Cyril API — tries all known key names */
-function parseAIText(data: any): string {
-  return (
-    data?.result ??
-    data?.reply ??
-    data?.response ??
-    data?.answer ??
-    data?.message ??
-    data?.text ??
-    data?.output ??
-    JSON.stringify(data)
+// ── Pollinations Text AI (free, no key needed) ────────────────────────────────
+async function pollinationsText(prompt: string, model = "openai"): Promise<string> {
+  const encoded = encodeURIComponent(prompt);
+  const { data } = await axios.get(
+    `https://text.pollinations.ai/${encoded}?model=${model}&seed=42`,
+    { timeout: 30000, responseType: "text" }
   );
+  return typeof data === "string" ? data.trim() : JSON.stringify(data);
 }
 
 // ── GPT-4 AI ──────────────────────────────────────────────────────────────────
@@ -32,34 +26,22 @@ export async function handleAI(
     return;
   }
 
-  // Thinking indicator
   await sock.sendMessage(jid(msg), {
-    text: `🧠 *AI is thinking...*\n_Processing: "${prompt.slice(0, 60)}${prompt.length > 60 ? "..." : ""}"_`,
+    text: `🧠 *AI is thinking...*\n_"${prompt.slice(0, 60)}${prompt.length > 60 ? "..." : ""}"_`,
   }, { quoted: msg });
 
   try {
-    const { data } = await axios.get(`${DC_BASE}/api/gpt4`, {
-      params: { query: prompt },
-      timeout: 30000,
-    });
-    const reply = parseAIText(data);
+    const reply = await pollinationsText(prompt, "openai");
     await sock.sendMessage(jid(msg), {
-      text: `🤖 *GPT-4*\n\n${reply}`,
+      text: `🤖 *AI*\n\n${reply}`,
     }, { quoted: msg });
   } catch (err: any) {
-    // Fallback endpoint pattern
     try {
-      const { data } = await axios.get(`${DC_BASE}/ai/gpt4`, {
-        params: { q: prompt },
-        timeout: 20000,
-      });
-      const reply = parseAIText(data);
-      await sock.sendMessage(jid(msg), {
-        text: `🤖 *GPT-4*\n\n${reply}`,
-      }, { quoted: msg });
+      const reply = await pollinationsText(prompt, "mistral");
+      await sock.sendMessage(jid(msg), { text: `🤖 *AI*\n\n${reply}` }, { quoted: msg });
     } catch {
       await sock.sendMessage(jid(msg), {
-        text: `❌ *AI Error:* Could not reach GPT-4.\n_${err.message}_`,
+        text: `❌ *AI Error:* ${err.message}\n_Try again in a moment._`,
       }, { quoted: msg });
     }
   }
@@ -68,25 +50,17 @@ export async function handleAI(
 // ── Meta AI (used for chatbot auto-reply) ─────────────────────────────────────
 export async function fetchMetaAI(prompt: string): Promise<string> {
   try {
-    const { data } = await axios.get(`${DC_BASE}/api/meta`, {
-      params: { query: prompt },
-      timeout: 20000,
-    });
-    return parseAIText(data);
+    return await pollinationsText(prompt, "openai");
   } catch {
     try {
-      const { data } = await axios.get(`${DC_BASE}/ai/meta`, {
-        params: { q: prompt },
-        timeout: 15000,
-      });
-      return parseAIText(data);
+      return await pollinationsText(prompt, "mistral");
     } catch {
       return "🤖 I'm having trouble connecting right now. Try again!";
     }
   }
 }
 
-// ── Image Generation (Flux v2) ────────────────────────────────────────────────
+// ── Image Generation (Pollinations Flux) ─────────────────────────────────────
 export async function handleImageGen(
   sock: WASocket,
   msg: WAMessage,
@@ -100,60 +74,25 @@ export async function handleImageGen(
   }
 
   await sock.sendMessage(jid(msg), {
-    text: `🎨 *Generating image...*\n_Prompt: "${prompt.slice(0, 80)}${prompt.length > 80 ? "..." : ""}"_\n_This may take 10-30 seconds..._`,
+    text: `🎨 *Generating image...*\n_"${prompt.slice(0, 80)}${prompt.length > 80 ? "..." : ""}"_\n_This may take 10-30 seconds..._`,
   }, { quoted: msg });
 
   try {
-    const { data } = await axios.get(`${DC_BASE}/api/flux`, {
-      params: { prompt },
-      timeout: 60000,
-      responseType: "arraybuffer",
-    });
-
-    // If it returns an image buffer directly
-    if (data instanceof Buffer || data.byteLength) {
-      const buf = Buffer.from(data);
-      await sock.sendMessage(jid(msg), {
-        image: buf,
-        caption: `🎨 *Generated Image*\n_Prompt: ${prompt}_`,
-      }, { quoted: msg });
-      return;
-    }
-
-    // If it returns JSON with URL
-    const parsed = typeof data === "string" ? JSON.parse(data) : data;
-    const imgUrl = parsed?.url ?? parsed?.image ?? parsed?.result;
-    if (imgUrl) {
-      const imgRes = await axios.get(imgUrl, { responseType: "arraybuffer", timeout: 30000 });
-      await sock.sendMessage(jid(msg), {
-        image: Buffer.from(imgRes.data),
-        caption: `🎨 *Generated Image*\n_Prompt: ${prompt}_`,
-      }, { quoted: msg });
-    } else {
-      throw new Error("No image URL in response");
-    }
+    const encoded = encodeURIComponent(prompt);
+    const url = `https://image.pollinations.ai/prompt/${encoded}?width=768&height=768&nologo=true&model=flux&seed=${Date.now()}`;
+    const { data } = await axios.get(url, { responseType: "arraybuffer", timeout: 60000 });
+    await sock.sendMessage(jid(msg), {
+      image: Buffer.from(data),
+      caption: `🎨 *Generated Image*\n_Prompt: ${prompt}_`,
+    }, { quoted: msg });
   } catch (err: any) {
-    // Fallback endpoint
-    try {
-      const { data } = await axios.get(`${DC_BASE}/imagegen/flux`, {
-        params: { prompt },
-        timeout: 60000,
-        responseType: "arraybuffer",
-      });
-      const buf = Buffer.from(data);
-      await sock.sendMessage(jid(msg), {
-        image: buf,
-        caption: `🎨 *Generated Image*\n_Prompt: ${prompt}_`,
-      }, { quoted: msg });
-    } catch {
-      await sock.sendMessage(jid(msg), {
-        text: `❌ *Image generation failed:* ${err.message}`,
-      }, { quoted: msg });
-    }
+    await sock.sendMessage(jid(msg), {
+      text: `❌ *Image generation failed:* ${err.message}`,
+    }, { quoted: msg });
   }
 }
 
-// ── Anime Image Generation (Animagine) ───────────────────────────────────────
+// ── Anime Image Generation (Pollinations Anime model) ────────────────────────
 export async function handleAnimeImage(
   sock: WASocket,
   msg: WAMessage,
@@ -167,37 +106,21 @@ export async function handleAnimeImage(
   }
 
   await sock.sendMessage(jid(msg), {
-    text: `🎌 *Generating anime image...*\n_Prompt: "${prompt.slice(0, 80)}${prompt.length > 80 ? "..." : ""}"_\n_Hold tight... ⏳_`,
+    text: `🎌 *Generating anime image...*\n_"${prompt.slice(0, 80)}${prompt.length > 80 ? "..." : ""}"_\n_Hold tight... ⏳_`,
   }, { quoted: msg });
 
   try {
-    const { data } = await axios.get(`${DC_BASE}/api/animagine`, {
-      params: { prompt },
-      timeout: 60000,
-      responseType: "arraybuffer",
-    });
-
-    const buf = Buffer.from(data);
+    const animePrompt = `${prompt}, anime style, high quality, detailed, masterpiece`;
+    const encoded = encodeURIComponent(animePrompt);
+    const url = `https://image.pollinations.ai/prompt/${encoded}?width=768&height=768&nologo=true&model=flux&seed=${Date.now()}`;
+    const { data } = await axios.get(url, { responseType: "arraybuffer", timeout: 60000 });
     await sock.sendMessage(jid(msg), {
-      image: buf,
+      image: Buffer.from(data),
       caption: `🎌 *Anime Image Generated!*\n_Prompt: ${prompt}_`,
     }, { quoted: msg });
   } catch (err: any) {
-    try {
-      const { data } = await axios.get(`${DC_BASE}/imagegen/animagine`, {
-        params: { prompt },
-        timeout: 60000,
-        responseType: "arraybuffer",
-      });
-      const buf = Buffer.from(data);
-      await sock.sendMessage(jid(msg), {
-        image: buf,
-        caption: `🎌 *Anime Image Generated!*\n_Prompt: ${prompt}_`,
-      }, { quoted: msg });
-    } catch {
-      await sock.sendMessage(jid(msg), {
-        text: `❌ *Anime image generation failed:* ${err.message}`,
-      }, { quoted: msg });
-    }
+    await sock.sendMessage(jid(msg), {
+      text: `❌ *Anime image generation failed:* ${err.message}`,
+    }, { quoted: msg });
   }
 }

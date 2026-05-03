@@ -9,7 +9,6 @@ import QRCode from "qrcode";
 import fs from "fs";
 import path from "path";
 import pino from "pino";
-import { setBotOwnerJid } from "../config.js";
 import { patchSockForCTA, attachBotHandlers } from "../handlers/setup.js";
 
 const TOKEN = process.env["TELEGRAM_BOT_TOKEN"] ?? "";
@@ -248,9 +247,8 @@ async function startWhatsAppSession(
       if (connection === "open") {
         console.log(`[TG-WA] Connected: ${identifier} ✅`);
 
-        // Auto-set owner from connected number
+        // Get connected number for display only (do NOT auto-set owner)
         const myNumber = sock.user?.id?.split(":")[0]?.split("@")[0] ?? "";
-        if (myNumber) setBotOwnerJid(sock.user!.id);
 
         // Delete QR message
         const prev = qrMessages.get(tgChatId);
