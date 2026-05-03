@@ -21,13 +21,19 @@ const activeSockets = new Map<string, any>();
 const qrMessages = new Map<number, number>();
 const userState: Record<number, string> = {};
 
-export function startTelegramBot() {
+export async function startTelegramBot() {
   if (!TOKEN) {
     console.log("[Telegram] TELEGRAM_BOT_TOKEN not set — skipping Telegram bot.");
     return;
   }
 
-  const bot = new TelegramBot(TOKEN, { polling: true });
+  // Drop webhook and clear pending updates before starting polling
+  // This resolves 409 Conflict when old instances are still running
+  const bot = new TelegramBot(TOKEN, { polling: false });
+  try {
+    await bot.deleteWebhook({ drop_pending_updates: true } as any);
+  } catch {}
+  bot.startPolling({ restart: true });
   console.log("[Telegram] Bot started!");
 
   // ── /start ────────────────────────────────────────────────────────────────
