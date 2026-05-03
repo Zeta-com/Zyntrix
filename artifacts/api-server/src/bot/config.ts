@@ -6,7 +6,7 @@ export const BOT_CONFIG = {
   channelUrl: "https://whatsapp.com/channel/0029VbCFEZv60eBdlqXqQz20",
 };
 
-export let isPublicMode = false;
+export let isPublicMode = true;
 
 // Auto-set when the bot connects — stores the bot's own JID as owner
 export let botOwnerJid = "";
