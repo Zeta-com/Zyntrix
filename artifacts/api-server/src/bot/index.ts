@@ -22,12 +22,9 @@ import { hasActiveTrivia, checkTriviaAnswer } from "./games/trivia.js";
 import { hasActiveMath, checkMathAnswer } from "./games/math.js";
 import { sendCTA } from "./helpers/cta.js";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Intercepts every sock.sendMessage call.
-// • Text-only messages → sent as a forwarded-style CTA button message.
-// • Everything else (images, videos, stickers, reactions, deletes, …) →
-//   passed through to the original sendMessage unchanged.
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────
+// Intercepts sock.sendMessage to send text-only messages as CTA
+// ──────────────────────────────────────────────────────────────
 function patchSockForCTA(sock: WASocket): WASocket {
   const original = sock.sendMessage.bind(sock);
 
@@ -58,7 +55,6 @@ function patchSockForCTA(sock: WASocket): WASocket {
         footer: BOT_CONFIG.botName,
         buttonText: "📢 Join Our Channel",
       });
-      // Return a minimal stub so callers that use the return value don't crash
       return { key: { id: "", remoteJid: jid, fromMe: true } } as any;
     }
 
@@ -68,6 +64,9 @@ function patchSockForCTA(sock: WASocket): WASocket {
   return sock;
 }
 
+// ──────────────────────────────────────────────────────────────
+// Main bot start function
+// ──────────────────────────────────────────────────────────────
 export async function startBot() {
   if (!fs.existsSync(BOT_CONFIG.sessionDir)) {
     fs.mkdirSync(BOT_CONFIG.sessionDir, { recursive: true });
@@ -91,7 +90,6 @@ export async function startBot() {
     generateHighQualityLinkPreview: true,
   });
 
-  // Patch BEFORE attaching any event handlers so all downstream code sees it
   const sock = patchSockForCTA(rawSock);
 
   sock.ev.on("creds.update", saveCreds);
@@ -106,17 +104,21 @@ export async function startBot() {
       console.log("\n📱 Scan the QR above or open /api/qr in your browser.\n");
     }
 
+    if (connection === "connecting") {
+      console.log("⏳ Connecting to WhatsApp...");
+    }
+
     if (connection === "close") {
       const shouldReconnect =
-        (lastDisconnect?.error as Boom)?.output?.statusCode !==
-        DisconnectReason.loggedOut;
+        (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
 
       logger.info({ shouldReconnect }, "Connection closed");
 
       if (shouldReconnect) {
+        console.log("🔄 Reconnecting...");
         setTimeout(() => startBot(), 5000);
       } else {
-        logger.warn("Logged out — deleting session and restarting.");
+        console.log("⚠️ Logged out — deleting session...");
         if (fs.existsSync(BOT_CONFIG.sessionDir)) {
           fs.rmSync(BOT_CONFIG.sessionDir, { recursive: true });
         }
@@ -146,14 +148,17 @@ export async function startBot() {
       if (!isFromMe) {
         cacheMessage(msg);
 
-        // Fake typing / recording presence
-        if (fakeTypeMode || fakeRecordMode) {
-          const mode = fakeRecordMode ? "recording" : "composing";
-          sock.sendPresenceUpdate(mode as any, jid).catch(() => {});
+        // Fake typing / recording
+        try {
+          if (fakeTypeMode || fakeRecordMode) {
+            const mode = fakeRecordMode ? "recording" : "composing";
+            await sock.sendPresenceUpdate(mode as any, jid);
+          }
+        } catch (err) {
+          logger.warn({ err }, "Failed to update fake presence");
         }
       }
 
-      // Owner typing their own commands
       if (isFromMe) {
         if (text && text.startsWith(BOT_CONFIG.prefix)) {
           console.log(`[CMD/owner] ${text}`);
