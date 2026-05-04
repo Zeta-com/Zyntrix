@@ -3,7 +3,6 @@ import {
   generateWAMessageContent,
   generateWAMessageFromContent,
   downloadContentFromMessage,
-  proto,
 } from "@whiskeysockets/baileys";
 import crypto from "crypto";
 import { PassThrough } from "stream";
@@ -12,6 +11,68 @@ const PURPLE_COLOR = "#9C27B0";
 
 function jid(msg: WAMessage) { return msg.key.remoteJid!; }
 
+// ── React helper ──────────────────────────────────────────────────────────────
+async function react(sock: WASocket, msg: WAMessage, emoji: string) {
+  try {
+    await sock.sendMessage(msg.key.remoteJid!, {
+      react: { text: emoji, key: msg.key },
+    } as any);
+  } catch {}
+}
+
+// ── .setgc — save a group JID to post statuses to ────────────────────────────
+export let statusGC: string = "";
+
+export function setStatusGC(groupJid: string) {
+  statusGC = groupJid;
+}
+
+export async function handleSetGC(
+  sock: WASocket,
+  msg: WAMessage,
+  input: string
+): Promise<void> {
+  const from = jid(msg);
+
+  if (!input.trim()) {
+    await sock.sendMessage(from, {
+      text:
+        `📍 *Set Group for Status*\n\n` +
+        `Usage: \`.setgc <group invite link or JID>\`\n` +
+        `Example: \`.setgc https://chat.whatsapp.com/xxxxx\`\n\n` +
+        `Current: ${statusGC || "_Not set_"}`,
+    }, { quoted: msg });
+    return;
+  }
+
+  try {
+    let groupJid = input.trim();
+
+    if (groupJid.includes("chat.whatsapp.com")) {
+      const code = groupJid.split("/").pop()!;
+      const info = await sock.groupGetInviteInfo(code);
+      groupJid = info.id;
+    }
+
+    if (!groupJid.endsWith("@g.us")) {
+      await sock.sendMessage(from, {
+        text: "❌ Invalid group JID. Use a WhatsApp group invite link or a JID ending in @g.us",
+      }, { quoted: msg });
+      return;
+    }
+
+    setStatusGC(groupJid);
+    await sock.sendMessage(from, {
+      text: `✅ *Group saved for status posting!*\n\n🆔 JID: \`${groupJid}\``,
+    }, { quoted: msg });
+  } catch (err: any) {
+    await sock.sendMessage(from, {
+      text: `❌ Failed to set group: ${err.message}`,
+    }, { quoted: msg });
+  }
+}
+
+// ── .groupstatus — post to group status (any member can use) ─────────────────
 export async function handleGroupStatus(
   sock: WASocket,
   msg: WAMessage,
@@ -29,30 +90,31 @@ export async function handleGroupStatus(
   const ctxInfo = msg.message?.extendedTextMessage?.contextInfo;
   const hasQuoted = !!ctxInfo?.quotedMessage;
 
-  // ── TEXT STATUS ──────────────────────────────────────────────────────────────
+  // ── TEXT STATUS ─────────────────────────────────────────────────────────────
   if (!hasQuoted) {
     if (!caption) {
       await sock.sendMessage(from, {
         text:
           `📝 *Group Status Usage*\n\n` +
-          `• Reply to image/video/audio:\n  \`.groupstatus [caption]\`\n` +
-          `• Text status:\n  \`.groupstatus Your text here\``,
+          `• Text status:\n  \`.gs Your text here\`\n` +
+          `• Reply to image/video/audio:\n  \`.gs [optional caption]\`\n\n` +
+          `_Anyone in the group can post!_`,
       }, { quoted: msg });
       return;
     }
 
-    await sock.sendMessage(from, { text: "⏳ *Posting text group status...*" }, { quoted: msg });
-
+    await react(sock, msg, "⏳");
     try {
       await sendGroupStatus(sock, from, { text: caption, backgroundColor: PURPLE_COLOR });
-      await sock.sendMessage(from, { text: "✅ *Text group status posted!*" }, { quoted: msg });
+      await react(sock, msg, "✅");
     } catch (e: any) {
+      await react(sock, msg, "❌");
       await sock.sendMessage(from, { text: `❌ Failed: ${e.message}` }, { quoted: msg });
     }
     return;
   }
 
-  // ── MEDIA STATUS ─────────────────────────────────────────────────────────────
+  // ── MEDIA STATUS ────────────────────────────────────────────────────────────
   const targetMsg = {
     key: {
       remoteJid: from,
@@ -72,14 +134,16 @@ export async function handleGroupStatus(
     return Buffer.concat(chunks);
   }
 
+  await react(sock, msg, "⏳");
+
   // IMAGE / STICKER
   if (/image|sticker/i.test(mtype)) {
-    await sock.sendMessage(from, { text: "⏳ *Posting image group status...*" }, { quoted: msg });
     try {
       const buf = await downloadBuf(/sticker/i.test(mtype) ? "sticker" : "image");
       await sendGroupStatus(sock, from, { image: buf, caption });
-      await sock.sendMessage(from, { text: "✅ *Image group status posted!*" }, { quoted: msg });
+      await react(sock, msg, "✅");
     } catch (e: any) {
+      await react(sock, msg, "❌");
       await sock.sendMessage(from, { text: `❌ Failed: ${e.message}` }, { quoted: msg });
     }
     return;
@@ -87,12 +151,12 @@ export async function handleGroupStatus(
 
   // VIDEO
   if (/video/i.test(mtype)) {
-    await sock.sendMessage(from, { text: "⏳ *Posting video group status...*" }, { quoted: msg });
     try {
       const buf = await downloadBuf("video");
       await sendGroupStatus(sock, from, { video: buf, caption });
-      await sock.sendMessage(from, { text: "✅ *Video group status posted!*" }, { quoted: msg });
+      await react(sock, msg, "✅");
     } catch (e: any) {
+      await react(sock, msg, "❌");
       await sock.sendMessage(from, { text: `❌ Failed: ${e.message}` }, { quoted: msg });
     }
     return;
@@ -100,7 +164,6 @@ export async function handleGroupStatus(
 
   // AUDIO
   if (/audio/i.test(mtype)) {
-    await sock.sendMessage(from, { text: "⏳ *Posting audio group status...*" }, { quoted: msg });
     try {
       const buf = await downloadBuf("audio");
       let vn = buf;
@@ -113,20 +176,22 @@ export async function handleGroupStatus(
         ptt: true,
         waveform,
       });
-      await sock.sendMessage(from, { text: "✅ *Audio group status posted!*" }, { quoted: msg });
+      await react(sock, msg, "✅");
     } catch (e: any) {
+      await react(sock, msg, "❌");
       await sock.sendMessage(from, { text: `❌ Failed: ${e.message}` }, { quoted: msg });
     }
     return;
   }
 
+  await react(sock, msg, "❌");
   await sock.sendMessage(from, {
     text: "❌ Unsupported type. Reply to an image, video, or audio.",
   }, { quoted: msg });
 }
 
 // ── Core group status sender ──────────────────────────────────────────────────
-async function sendGroupStatus(sock: WASocket, jid: string, content: any) {
+async function sendGroupStatus(sock: WASocket, targetJid: string, content: any) {
   const { backgroundColor } = content;
   const cleanContent = { ...content };
   delete cleanContent.backgroundColor;
@@ -138,8 +203,8 @@ async function sendGroupStatus(sock: WASocket, jid: string, content: any) {
 
   const secret = crypto.randomBytes(32);
 
-  const msg = generateWAMessageFromContent(
-    jid,
+  const generatedMsg = generateWAMessageFromContent(
+    targetJid,
     {
       messageContextInfo: { messageSecret: secret },
       groupStatusMessageV2: {
@@ -152,76 +217,67 @@ async function sendGroupStatus(sock: WASocket, jid: string, content: any) {
     {}
   );
 
-  await sock.relayMessage(jid, msg.message!, { messageId: msg.key.id! });
-  return msg;
+  await sock.relayMessage(targetJid, generatedMsg.message!, { messageId: generatedMsg.key.id! });
+  return generatedMsg;
 }
 
 // ── Convert audio to voice note (ogg/opus) ───────────────────────────────────
 function toVoiceNote(buffer: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    try {
-      // Dynamic import so fluent-ffmpeg doesn't crash at load time if ffmpeg is missing
-      import("fluent-ffmpeg").then((ffmpegMod) => {
-        const ffmpeg = ffmpegMod.default;
-        const input = new PassThrough();
-        const output = new PassThrough();
-        const chunks: Buffer[] = [];
-        input.end(buffer);
-        ffmpeg(input)
-          .noVideo()
-          .audioCodec("libopus")
-          .format("ogg")
-          .audioChannels(1)
-          .audioFrequency(48000)
-          .on("error", reject)
-          .on("end", () => resolve(Buffer.concat(chunks)))
-          .pipe(output as any);
-        output.on("data", (c: Buffer) => chunks.push(c));
-      }).catch(reject);
-    } catch (e) {
-      reject(e);
-    }
+    import("fluent-ffmpeg").then((ffmpegMod) => {
+      const ffmpeg = ffmpegMod.default;
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const chunks: Buffer[] = [];
+      input.end(buffer);
+      ffmpeg(input)
+        .noVideo()
+        .audioCodec("libopus")
+        .format("ogg")
+        .audioChannels(1)
+        .audioFrequency(48000)
+        .on("error", reject)
+        .on("end", () => resolve(Buffer.concat(chunks)))
+        .pipe(output as any);
+      output.on("data", (c: Buffer) => chunks.push(c));
+    }).catch(reject);
   });
 }
 
 // ── Generate waveform for audio status ───────────────────────────────────────
 function generateWaveform(buffer: Buffer, bars = 64): Promise<string | null> {
   return new Promise((resolve) => {
-    try {
-      import("fluent-ffmpeg").then((ffmpegMod) => {
-        const ffmpeg = ffmpegMod.default;
-        const input = new PassThrough();
-        input.end(buffer);
-        const chunks: Buffer[] = [];
+    import("fluent-ffmpeg").then((ffmpegMod) => {
+      const ffmpeg = ffmpegMod.default;
+      const input = new PassThrough();
+      input.end(buffer);
+      const chunks: Buffer[] = [];
 
-        ffmpeg(input)
-          .audioChannels(1)
-          .audioFrequency(16000)
-          .format("s16le")
-          .on("error", () => resolve(null))
-          .on("end", () => {
-            const raw = Buffer.concat(chunks);
-            const samples = raw.length / 2;
-            const amps: number[] = [];
-            for (let i = 0; i < samples; i++) {
-              amps.push(Math.abs(raw.readInt16LE(i * 2)) / 32768);
-            }
-            const size = Math.floor(amps.length / bars);
-            if (size === 0) return resolve(null);
-            const avg = Array.from({ length: bars }, (_, i) =>
-              amps.slice(i * size, (i + 1) * size).reduce((a, b) => a + b, 0) / size
-            );
-            const max = Math.max(...avg);
-            if (max === 0) return resolve(null);
-            resolve(
-              Buffer.from(avg.map(v => Math.floor((v / max) * 100))).toString("base64")
-            );
-          })
-          .pipe()
-          .on("data", (c: Buffer) => chunks.push(c));
-      }).catch(() => resolve(null));
-    } catch {
-      resolve(null);
-    }
+      ffmpeg(input)
+        .audioChannels(1)
+        .audioFrequency(16000)
+        .format("s16le")
+        .on("error", () => resolve(null))
+        .on("end", () => {
+          const raw = Buffer.concat(chunks);
+          const samples = raw.length / 2;
+          const amps: number[] = [];
+          for (let i = 0; i < samples; i++) {
+            amps.push(Math.abs(raw.readInt16LE(i * 2)) / 32768);
+          }
+          const size = Math.floor(amps.length / bars);
+          if (size === 0) return resolve(null);
+          const avg = Array.from({ length: bars }, (_, i) =>
+            amps.slice(i * size, (i + 1) * size).reduce((a, b) => a + b, 0) / size
+          );
+          const max = Math.max(...avg);
+          if (max === 0) return resolve(null);
+          resolve(
+            Buffer.from(avg.map(v => Math.floor((v / max) * 100))).toString("base64")
+          );
+        })
+        .pipe()
+        .on("data", (c: Buffer) => chunks.push(c));
+    }).catch(() => resolve(null));
   });
 }

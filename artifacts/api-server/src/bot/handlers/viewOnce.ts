@@ -9,7 +9,16 @@ function resolveOwnerJid(): string | null {
   return null;
 }
 
-// ── Auto-forward view-once to owner on detection ──────────────────────────────
+// ── React helper ─────────────────────────────────────────────────────────────
+async function react(sock: WASocket, msg: WAMessage, emoji: string) {
+  try {
+    await sock.sendMessage(msg.key.remoteJid!, {
+      react: { text: emoji, key: msg.key },
+    } as any);
+  } catch {}
+}
+
+// ── Auto-forward view-once to owner on detection ─────────────────────────────
 export async function handleViewOnce(sock: WASocket, msg: WAMessage) {
   const ownerJid = resolveOwnerJid();
   if (!ownerJid) {
@@ -37,7 +46,6 @@ export async function handleViewOnce(sock: WASocket, msg: WAMessage) {
 
   try {
     const buffer = (await downloadMediaMessage(msg, "buffer", {})) as Buffer;
-
     await sock.sendMessage(ownerJid, { text: header });
 
     if (viewOnceMsg.imageMessage) {
@@ -50,6 +58,12 @@ export async function handleViewOnce(sock: WASocket, msg: WAMessage) {
         video: buffer,
         caption: `👁️ View-once video${viewOnceMsg.videoMessage.caption ? `\n"${viewOnceMsg.videoMessage.caption}"` : ""}`,
       });
+    } else if (viewOnceMsg.audioMessage) {
+      await sock.sendMessage(ownerJid, {
+        audio: buffer,
+        mimetype: "audio/mp4",
+        caption: `👁️ View-once audio`,
+      } as any);
     } else {
       await sock.sendMessage(ownerJid, {
         text: header + "\n\n📎 View-once media (unsupported type).",
@@ -65,80 +79,89 @@ export async function handleViewOnce(sock: WASocket, msg: WAMessage) {
   }
 }
 
-// ── .vv command: reply to a view-once to unlock it ──────────────────────────
+// ── .vv command: reply to a view-once to reveal it ───────────────────────────
 export async function handleVVCommand(sock: WASocket, msg: WAMessage) {
-  const jid = msg.key.remoteJid!;
-  const quotedInfo = msg.message?.extendedTextMessage?.contextInfo;
+  const chatJid = msg.key.remoteJid!;
+  const ctxInfo = msg.message?.extendedTextMessage?.contextInfo;
 
-  if (!quotedInfo?.quotedMessage) {
-    await sock.sendMessage(jid, {
-      text: "📎 *Reply to a view-once message* with *.vv* to reveal the media.",
+  if (!ctxInfo?.quotedMessage) {
+    await sock.sendMessage(chatJid, {
+      text: "📎 *Reply to a view-once message* (image, video or audio) with *.vv* to reveal it.",
     }, { quoted: msg });
     return;
   }
 
-  const quotedMsg = quotedInfo.quotedMessage;
+  const quotedMessage = ctxInfo.quotedMessage;
 
-  const viewOnceInner =
-    quotedMsg.viewOnceMessage?.message ??
-    quotedMsg.viewOnceMessageV2?.message ??
-    quotedMsg.viewOnceMessageV2Extension?.message;
+  // Determine the real inner message (may be nested under viewOnce wrapper)
+  const inner =
+    quotedMessage.viewOnceMessage?.message ??
+    quotedMessage.viewOnceMessageV2?.message ??
+    quotedMessage.viewOnceMessageV2Extension?.message ??
+    quotedMessage;
 
-  const hasMedia = viewOnceInner?.imageMessage || viewOnceInner?.videoMessage ||
-                   quotedMsg.imageMessage || quotedMsg.videoMessage;
+  const hasMedia =
+    inner.imageMessage || inner.videoMessage || inner.audioMessage ||
+    quotedMessage.imageMessage || quotedMessage.videoMessage || quotedMessage.audioMessage;
 
   if (!hasMedia) {
-    await sock.sendMessage(jid, {
+    await sock.sendMessage(chatJid, {
       text: "❌ That doesn't look like a view-once message. Reply *directly* to the view-once.",
     }, { quoted: msg });
     return;
   }
 
-  await sock.sendMessage(jid, { text: "⏳ *Unlocking view-once...*" }, { quoted: msg });
+  // Build a fake WAMessage so downloadMediaMessage can work
+  const fakeMsg: WAMessage = {
+    key: {
+      remoteJid: chatJid,
+      fromMe: false,
+      id: ctxInfo.stanzaId ?? "",
+      participant: ctxInfo.participant,
+    },
+    message: quotedMessage,
+    messageTimestamp: Date.now(),
+  };
 
   try {
-    // Build a synthetic WAMessage to use downloadMediaMessage
-    const fakeMsg: WAMessage = {
-      key: {
-        remoteJid: jid,
-        fromMe: false,
-        id: quotedInfo.stanzaId ?? "",
-        participant: quotedInfo.participant,
-      },
-      message: quotedMsg,
-      messageTimestamp: Date.now(),
-    };
-
     const buffer = (await downloadMediaMessage(fakeMsg, "buffer", {})) as Buffer;
+    const resolved = inner.imageMessage
+      ? inner
+      : inner.videoMessage
+      ? inner
+      : inner.audioMessage
+      ? inner
+      : quotedMessage;
 
-    const inner = viewOnceInner ?? quotedMsg;
-
-    if (inner.imageMessage) {
-      await sock.sendMessage(jid, {
+    if (resolved.imageMessage || quotedMessage.imageMessage) {
+      const caption = (resolved.imageMessage ?? (quotedMessage as any).imageMessage)?.caption ?? "";
+      await sock.sendMessage(chatJid, {
         image: buffer,
-        caption:
-          `👁️ *View-Once Unlocked!* 🔓` +
-          (inner.imageMessage.caption ? `\n_"${inner.imageMessage.caption}"_` : ""),
+        caption: `👁️ *View-Once Revealed!* 🔓${caption ? `\n_"${caption}"_` : ""}`,
       }, { quoted: msg });
-    } else if (inner.videoMessage) {
-      await sock.sendMessage(jid, {
+
+    } else if (resolved.videoMessage || quotedMessage.videoMessage) {
+      const caption = (resolved.videoMessage ?? (quotedMessage as any).videoMessage)?.caption ?? "";
+      await sock.sendMessage(chatJid, {
         video: buffer,
-        caption:
-          `👁️ *View-Once Unlocked!* 🔓` +
-          (inner.videoMessage.caption ? `\n_"${inner.videoMessage.caption}"_` : ""),
+        caption: `👁️ *View-Once Revealed!* 🔓${caption ? `\n_"${caption}"_` : ""}`,
       }, { quoted: msg });
-    } else {
-      await sock.sendMessage(jid, {
-        document: buffer,
-        mimetype: "application/octet-stream",
-        fileName: "view_once_media",
-        caption: "👁️ *View-Once Unlocked!* 🔓",
-      }, { quoted: msg });
+
+    } else if (resolved.audioMessage || quotedMessage.audioMessage) {
+      await sock.sendMessage(chatJid, {
+        audio: buffer,
+        mimetype: "audio/mp4",
+      } as any, { quoted: msg });
     }
+
+    // React ✅ on success
+    await react(sock, msg, "✅");
+
   } catch (err) {
     logger.error({ err }, ".vv download failed");
-    await sock.sendMessage(jid, {
-      text: "❌ Could not unlock the view-once — it may have already been viewed or expired.",
+    await react(sock, msg, "❌");
+    await sock.sendMessage(chatJid, {
+      text: "❌ Could not reveal the view-once — it may have already expired.",
     }, { quoted: msg });
   }
 }

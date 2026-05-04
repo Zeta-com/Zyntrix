@@ -1,0 +1,176 @@
+Affa command named vv for revealing view once message and use this:
+case 'vv': {
+    try {
+        if (!m.quoted) return reply('Reply to a ViewOnce Video, Image, or Audio.');
+
+        const quotedMessage = m.msg.contextInfo.quotedMessage;
+
+        if (!quotedMessage) return reply('❌ No media found in the quoted message.');
+
+        if (quotedMessage.imageMessage) {
+            let imageCaption = quotedMessage.imageMessage.caption || '';
+            let imageUrl = await David.downloadAndSaveMediaMessage(quotedMessage.imageMessage);
+            await David.sendMessage(m.chat, { image: { url: imageUrl }, caption: imageCaption });
+            await David.sendMessage(m?.chat, { react: { text: `✅`, key: m?.key } });
+   
+        }
+
+        if (quotedMessage.videoMessage) {
+            let videoCaption = quotedMessage.videoMessage.caption || '';
+            let videoUrl = await David.downloadAndSaveMediaMessage(quotedMessage.videoMessage);
+            await David.sendMessage(m.chat, { video: { url: videoUrl }, caption: videoCaption });
+            await David.sendMessage(m?.chat, { react: { text: `✅`, key: m?.key } });
+   
+        }
+
+        if (quotedMessage.audioMessage) {
+            let audioUrl = await David.downloadAndSaveMediaMessage(quotedMessage.audioMessage);
+            await David.sendMessage(m.chat, { audio: { url: audioUrl }, mimetype: 'audio/mp4' });
+            await David.sendMessage(m?.chat, { react: { text: `✅`, key: m?.key } });
+   
+        }
+
+    } catch (error) {
+        console.error('Error processing vv command:', error);
+        await David.sendMessage(m?.chat, { react: { text: `❌`, key: m?.key } });
+   
+    }
+    break;
+}
+
+Add a command named groupstatus:
+case 'gcstatus':
+case 'swgc':
+case 'upswgc': {
+    if (!m.isGroup) return reply('❌ Group only command');
+    if (!isAdmins) return reply('❌ Admin only');
+
+    const quoted = m.quoted || m;
+    const mime = (quoted.msg || quoted).mimetype || '';
+    const caption = text || '';
+
+    try {
+        if (!mime && !caption) {
+            return reply(
+                `❌ Reply image/video/audio or add text\nExample:\n${prefix + command} Hello group`
+            );
+        }
+
+        const crypto = require('crypto');
+        const baileys = require('wileys');
+
+        let payload = {};
+
+        if (/image/.test(mime)) {
+            const buffer = await quoted.download();
+            payload = { image: buffer, caption };
+        } else if (/video/.test(mime)) {
+            const buffer = await quoted.download();
+            payload = { video: buffer, caption };
+        } else if (/audio/.test(mime)) {
+            const buffer = await quoted.download();
+            payload = {
+                audio: buffer,
+                mimetype: 'audio/mp4'
+            };
+        } else {
+            payload = { text: caption };
+        }
+
+        const inside = await baileys.generateWAMessageContent(payload, {
+            upload: David.waUploadToServer
+        });
+
+        const messageSecret = crypto.randomBytes(32);
+
+        const msg = baileys.generateWAMessageFromContent(
+            m.chat,
+            {
+                messageContextInfo: { messageSecret },
+                groupStatusMessageV2: {
+                    message: {
+                        ...inside,
+                        messageContextInfo: { messageSecret }
+                    }
+                }
+            },
+            {}
+        );
+
+        await David.relayMessage(m.chat, msg.message, {
+            messageId: msg.key.id
+        });
+
+        await David.sendMessage(m.chat, {
+            react: { text: '✅', key: m.key }
+        });
+
+    } catch (err) {
+        console.error('❌ GCSTATUS ERROR:', err);
+        reply('❌ Failed to send group status');
+    }
+}
+break;
+
+
+case 'setgc': {
+    if (m.isGroup) return reply('❌ Use in DM');
+    if (!isCreator) return reply('❌ Owner only');
+
+    if (!text) {
+        return reply('❌ Provide group JID or invite link');
+    }
+
+    try {
+        let groupJid = text.trim();
+
+        // 🔗 If invite link
+        if (groupJid.includes('chat.whatsapp.com')) {
+            const code = groupJid.split('/').pop();
+            const res = await David.groupGetInviteInfo(code);
+            groupJid = res.id;
+        }
+
+        if (!groupJid.endsWith('@g.us')) {
+            return reply('❌ Invalid group');
+        }
+
+        global.statusGC = groupJid;
+
+        reply(
+            `✅ Group saved successfully\n\n` +
+            `🆔 JID: ${groupJid}`
+        );
+
+    } catch (err) {
+        console.error('SETGC ERROR:', err);
+        reply('❌ Failed to set group (invalid link or bot not in group)');
+    }
+}
+break;
+
+
+
+
+
+function splitVideoNoProbe(inputPath, segmentTime = 60) {
+    return new Promise((resolve, reject) => {
+        const outDir = path.join('./temp', Date.now().toString());
+        fs.mkdirSync(outDir, { recursive: true });
+
+        const outputPattern = path.join(outDir, 'part_%03d.mp4');
+        const cmd = `ffmpeg -i "${inputPath}" -map 0 -c copy -f segment -segment_time ${segmentTime} "${outputPattern}"`;
+
+        exec(cmd, (err) => {
+            if (err) return reject(err);
+
+            const files = fs.readdirSync(outDir)
+                .map(f => path.join(outDir, f))
+                .filter(f => fs.statSync(f).size > 0);
+
+            resolve(files);
+        });
+    });
+}
+
+Also make sure it only work in group and all members/non admin can use it also 

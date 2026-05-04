@@ -38,7 +38,7 @@ import {
   handleDisappear, handleAnime,
 } from "./extra.js";
 import { handleAI, handleImageGen, handleAnimeImage } from "./ai.js";
-import { handleGroupStatus } from "./groupstatus.js";
+import { handleGroupStatus, handleSetGC } from "./groupstatus.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 export function getSender(msg: WAMessage): string {
@@ -118,7 +118,8 @@ function buildMenu(senderName: string, chatJid: string): string {
 ┃├◆ ${p}promote [@user]
 ┃├◆ ${p}mute / ${p}unmute
 ┃├◆ ${p}groupinfo
-┃├◆ ${p}groupstatus / ${p}gs
+┃├◆ ${p}gs / ${p}gcstatus / ${p}swgc [caption]
+┃├◆ ${p}setgc [invite link or JID]
 ┃├◆ ${p}getpp [@user]
 ┗❐
 
@@ -351,13 +352,20 @@ export async function handleCommand(
         break;
       }
 
-      // ── GROUP STATUS ───────────────────────────────────────────────────────
+      // ── GROUP STATUS (open to ALL members, no admin required) ─────────────
       case "groupstatus":
       case "gs":
       case "gstatus":
-      case "togstatus":
+      case "gcstatus":
       case "swgc":
+      case "upswgc":
+      case "togstatus":
         await handleGroupStatus(sock, msg, rest);
+        break;
+
+      case "setgc":
+        if (!isOwner(msg)) { await sock.sendMessage(jid, { text: "👑 *Owner only!*" }, { quoted: msg }); break; }
+        await handleSetGC(sock, msg, rest);
         break;
 
       // ── MOVIE ──────────────────────────────────────────────────────────────
