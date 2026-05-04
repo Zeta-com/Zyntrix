@@ -46,11 +46,24 @@ export function getSender(msg: WAMessage): string {
 }
 
 export function isOwner(msg: WAMessage): boolean {
+  // If the message came FROM the connected device, it's always the owner
+  if (msg.key.fromMe === true) return true;
+
   const sender = getSender(msg);
-  if (config.botOwnerJid) return config.isOwnerJid(sender) || config.isOwnerJid(msg.key.remoteJid ?? "");
+
+  // Explicit owner set via .setowner or auto-detected on connect
+  if (config.botOwnerJid) {
+    return config.isOwnerJid(sender) || config.isOwnerJid(msg.key.remoteJid ?? "");
+  }
+
+  // Fallback to OWNER_NUMBER env var
   const owner = config.BOT_CONFIG.ownerNumber;
-  if (!owner) return true;
-  return sender.includes(owner) || (msg.key.remoteJid ?? "").includes(owner);
+  if (owner) {
+    return sender.includes(owner) || (msg.key.remoteJid ?? "").includes(owner);
+  }
+
+  // No owner configured at all — nobody is owner except fromMe (handled above)
+  return false;
 }
 
 export function getJid(msg: WAMessage): string {
