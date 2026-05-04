@@ -13,6 +13,9 @@ import { setQR, setConnected } from "./qrstore.js";
 import { patchSockForCTA, attachBotHandlers } from "./handlers/setup.js";
 import { startTelegramBot } from "./telegram/bot.js";
 
+// ── Telegram singleton guard — only ever start once ──────────────────────────
+let telegramStarted = false;
+
 export async function startBot() {
   if (!fs.existsSync(BOT_CONFIG.sessionDir)) {
     fs.mkdirSync(BOT_CONFIG.sessionDir, { recursive: true });
@@ -75,10 +78,14 @@ export async function startBot() {
   // ── Attach all command/game/chatbot handlers ──────────────────────────────
   attachBotHandlers(sock);
 
-  // Start Telegram bot manager (non-blocking)
-  startTelegramBot().catch((e: any) => {
-    console.log("[Telegram] Skipped:", e.message);
-  });
+  // ── Start Telegram bot exactly once — never again on reconnects ───────────
+  if (!telegramStarted) {
+    telegramStarted = true;
+    startTelegramBot().catch((e: any) => {
+      console.log("[Telegram] Failed to start:", e.message);
+      telegramStarted = false; // allow retry on next reconnect if it errored
+    });
+  }
 
   return sock;
 }
