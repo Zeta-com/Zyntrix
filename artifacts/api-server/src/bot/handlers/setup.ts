@@ -30,23 +30,26 @@ export function patchSockForCTA(sock: WASocket): WASocket {
     content: AnyMessageContent,
     options?: MiscMessageGenerationOptions
   ) => {
+    const c = content as any;
     const isTextOnly =
-      "text" in content &&
-      typeof (content as any).text === "string" &&
-      !("image" in content) &&
-      !("video" in content) &&
-      !("audio" in content) &&
-      !("sticker" in content) &&
-      !("document" in content) &&
-      !("react" in content) &&
-      !("delete" in content) &&
-      !("forward" in content) &&
-      !("poll" in content) &&
-      !("disappearingMessagesInChat" in content) &&
-      !("groupUpdate" in content);
+      "text" in c &&
+      typeof c.text === "string" &&
+      !("image" in c) &&
+      !("video" in c) &&
+      !("audio" in c) &&
+      !("sticker" in c) &&
+      !("document" in c) &&
+      !("react" in c) &&
+      !("delete" in c) &&
+      !("forward" in c) &&
+      !("poll" in c) &&
+      !("disappearingMessagesInChat" in c) &&
+      !("groupUpdate" in c) &&
+      // Don't strip @mentions — pass those through as-is
+      !(Array.isArray(c.mentions) && c.mentions.length > 0);
 
     if (isTextOnly) {
-      await sendCTA(sock, jid, (content as any).text as string, {
+      await sendCTA(sock, jid, c.text as string, {
         forwarded: true,
         quoted: options?.quoted as any,
         footer: BOT_CONFIG.botName,
@@ -143,12 +146,13 @@ export function attachBotHandlers(sock: WASocket): void {
         }
       }
 
-      // ── Chatbot (Meta AI auto-reply) ──────────────────────────────────────
+      // ── Chatbot (AI auto-reply) ───────────────────────────────────────────
       if (isChatbotOn(chatJid)) {
         try {
           const aiResponse = await fetchMetaAI(text);
           if (isGroup && sender) {
             const senderNum = sender.split("@")[0];
+            // messages with mentions bypass CTA patch (see patchSockForCTA)
             await sock.sendMessage(
               chatJid,
               { text: `@${senderNum} ${aiResponse}`, mentions: [sender] } as any,
@@ -157,7 +161,9 @@ export function attachBotHandlers(sock: WASocket): void {
           } else {
             await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
           }
-        } catch {}
+        } catch (err: any) {
+          console.error("[Chatbot] Failed to send reply:", err?.message ?? err);
+        }
       }
     }
   });
