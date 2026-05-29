@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: zeta-ai-bot
+    runtime: node
+    plan: free
+    nodeVersion: 20  # LTS — Render supports up to 20 on free tier
+
+    # Install pnpm then build the bot bundle via esbuild
+    buildCommand: >
+      npm install -g pnpm@10 &&
+      pnpm install --frozen-lockfile &&
+      pnpm --filter @workspace/api-server run build
+
+    # Start the pre-built ESM bundle
+    startCommand: node artifacts/api-server/dist/index.mjs
+
+    # Health-check so Render knows the service is alive
+    healthCheckPath: /api/healthz
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # ── Set these manually in the Render dashboard ──────────────────────────
+      - key: OWNER_NUMBER
+        sync: false   # your WhatsApp number, digits only
+
+      - key: BOT_NAME
+        sync: false   # display name for the bot
+
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false   # from @BotFather
+
+      # Auto-generated random secret for session signing
+      - key: SESSION_SECRET
+        generateValue: true
