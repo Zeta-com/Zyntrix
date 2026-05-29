@@ -385,7 +385,7 @@ export async function handleAnime(sock: WASocket, msg: WAMessage, query: string)
     const res = await axios.get(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`, { timeout: 8000 });
     const a = res.data.data?.[0];
     if (!a) throw new Error("Not found");
-    const caption = `🎌 *${a.title}* (${a.title_english || a.title})\n` +
+    const caption = `🎌 *${a.title}* (${a.title_english ?? a.title})\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
       `⭐ Score: *${a.score}/10* (${a.scored_by?.toLocaleString()} votes)\n` +
       `📺 Episodes: *${a.episodes || "?"}*\n` +
@@ -403,4 +403,80 @@ export async function handleAnime(sock: WASocket, msg: WAMessage, query: string)
   } catch {
     await sock.sendMessage(jid(msg), { text: `❌ Anime "*${query}*" not found.` }, { quoted: msg });
   }
+}
+
+
+// ── Convert WhatsApp channel link → newsletter JID ────────────────────────────
+export async function handleGetNewsletter(sock: WASocket, msg: WAMessage, link: string): Promise<void> {
+  if (!link || !link.trim()) {
+    await sock.sendMessage(jid(msg), {
+      text: `📢 *Get Newsletter JID*\n\n*Usage:* \`.getnewsletter [channel link]\`\n*Example:* \`.getnewsletter https://whatsapp.com/channel/120363424876568536\`\n\n_Converts a WhatsApp channel link into its newsletter JID for use in commands._`,
+    }, { quoted: msg });
+    return;
+  }
+  const match = link.match(/channel\/([A-Za-z0-9]+)/);
+  if (!match) {
+    await sock.sendMessage(jid(msg), { text: "❌ Invalid channel link. Use: `https://whatsapp.com/channel/...`" }, { quoted: msg });
+    return;
+  }
+  const id = match[1];
+  const newsletterJid = `${id}@newsletter`;
+  await sock.sendMessage(jid(msg), {
+    text: `📢 *Newsletter JID*\n\n🔗 *Link:* ${link}\n🆔 *JID:* \`${newsletterJid}\`\n\n_Use this JID to follow/reference this channel in bot commands._`,
+  }, { quoted: msg });
+}
+
+// ── Convert phone number → WhatsApp JID ───────────────────────────────────────
+export async function handleGetJid(sock: WASocket, msg: WAMessage, input: string): Promise<void> {
+  if (!input || !input.trim()) {
+    await sock.sendMessage(jid(msg), {
+      text: `📱 *Get JID*\n\n*Usage:* \`.getjid [number]\`\n*Example:* \`.getjid 2348012345678\`\n\n_Converts a phone number to a WhatsApp JID._`,
+    }, { quoted: msg });
+    return;
+  }
+  const clean = input.replace(/[^0-9]/g, "");
+  if (clean.length < 7) {
+    await sock.sendMessage(jid(msg), { text: "❌ Invalid number. Include country code (e.g. `2348012345678`)." }, { quoted: msg });
+    return;
+  }
+  const userJid  = `${clean}@s.whatsapp.net`;
+  await sock.sendMessage(jid(msg), {
+    text: `📱 *JID Result*\n\n🔢 *Number:* +${clean}\n👤 *User JID:* \`${userJid}\``,
+  }, { quoted: msg });
+}
+
+// ── Mention/tag a user by number ───────────────────────────────────────────────
+export async function handleMention(sock: WASocket, msg: WAMessage, args: string): Promise<void> {
+  const parts = args.trim().split(/\s+/);
+  const number = parts[0]?.replace(/[^0-9]/g, "") ?? "";
+  const text   = parts.slice(1).join(" ") || "Hey!";
+  if (!number) {
+    await sock.sendMessage(jid(msg), { text: "📌 *Usage:* `.mention [number] [message]`" }, { quoted: msg });
+    return;
+  }
+  const targetJid = `${number}@s.whatsapp.net`;
+  await sock.sendMessage(jid(msg), {
+    text: `@${number} ${text}`,
+    mentions: [targetJid],
+  }, { quoted: msg });
+}
+
+// ── Broadcast message to all active chats (owner only) ────────────────────────
+export async function handleBroadcast(sock: WASocket, msg: WAMessage, text: string): Promise<void> {
+  if (!text.trim()) {
+    await sock.sendMessage(jid(msg), { text: "📢 *Usage:* `.broadcast [message]`" }, { quoted: msg });
+    return;
+  }
+  const chats = await (sock as any).groupFetchAllParticipating?.().catch(() => ({}));
+  const jids = Object.keys(chats ?? {});
+  if (!jids.length) {
+    await sock.sendMessage(jid(msg), { text: "❌ No groups found to broadcast to." }, { quoted: msg });
+    return;
+  }
+  let sent = 0;
+  for (const g of jids) {
+    try { await sock.sendMessage(g, { text }); sent++; } catch {}
+    await new Promise(r => setTimeout(r, 500));
+  }
+  await sock.sendMessage(jid(msg), { text: `📢 *Broadcast sent to ${sent} group(s)!*` }, { quoted: msg });
 }

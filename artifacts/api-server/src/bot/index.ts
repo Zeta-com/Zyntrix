@@ -9,7 +9,7 @@ import qrcode from "qrcode-terminal";
 import fs from "fs";
 import { logger } from "../lib/logger.js";
 import { BOT_CONFIG, setBotOwnerJid } from "./config.js";
-import { setQR, setConnected } from "./qrstore.js";
+import { setQR, setConnected, setSock } from "./qrstore.js";
 import { patchSockForCTA, attachBotHandlers } from "./handlers/setup.js";
 import { startTelegramBot } from "./telegram/bot.js";
 
@@ -70,6 +70,7 @@ export async function startBot() {
       }
     } else if (connection === "open") {
       setConnected();
+      setSock(sock);
       if (sock.user?.id) setBotOwnerJid(sock.user.id);
       console.log(`\n✅ ${BOT_CONFIG.botName} is ONLINE! Owner: ${sock.user?.id ?? "unknown"}\n`);
     }
