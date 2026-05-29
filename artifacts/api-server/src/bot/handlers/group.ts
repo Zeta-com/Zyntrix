@@ -39,7 +39,7 @@ export async function handleGroupInfo(sock: WASocket, msg: WAMessage): Promise<v
   try {
     const meta = await sock.groupMetadata(jid(msg));
     const admins = meta.participants.filter(p => p.admin).length;
-    const created = new Date(meta.creation * 1000).toLocaleDateString();
+    const created = new Date((meta.creation ?? 0) * 1000).toLocaleDateString();
     await sock.sendMessage(jid(msg), {
       text: `👥 *Group Info*\n\n📌 *Name:* ${meta.subject}\n👤 *Members:* ${meta.participants.length}\n🛡️ *Admins:* ${admins}\n📅 *Created:* ${created}\n🆔 *ID:* ${meta.id}\n${meta.desc ? `\n📝 *Description:*\n${meta.desc}` : ""}`,
     }, { quoted: msg });
@@ -82,7 +82,7 @@ export async function handleProfilePic(sock: WASocket, msg: WAMessage, target?: 
   }
 
   try {
-    const ppUrl = await sock.profilePictureUrl(targetJid, "image");
+    const ppUrl = await sock.profilePictureUrl(targetJid, "image") ?? "";
     const { default: axios } = await import("axios");
     const res = await axios.get(ppUrl, { responseType: "arraybuffer" });
     await sock.sendMessage(jid(msg), {

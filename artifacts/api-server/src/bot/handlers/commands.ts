@@ -416,7 +416,7 @@ export async function handleCommand(
         break;
 
       case "kick":
-        await handleKick(sock, msg, rest);
+        await handleKick(sock, msg);
         break;
 
       case "mute":
@@ -428,7 +428,7 @@ export async function handleCommand(
         break;
 
       case "promote":
-        await handlePromote(sock, msg, rest);
+        await handlePromote(sock, msg, true);
         break;
 
       // ── FUN ────────────────────────────────────────────────────────────────
@@ -438,21 +438,21 @@ export async function handleCommand(
       case "8ball":     await handle8Ball(sock, msg, rest); break;
       case "coinflip":
       case "flip":      await handleCoinFlip(sock, msg); break;
-      case "dice":      await handleDice(sock, msg); break;
-      case "rps":       await playRPS(sock, msg, rest); break;
+      case "dice":      await handleDice(sock, msg, rest); break;
+      case "rps": { const rpsResult = playRPS(rest); await sock.sendMessage(jid, { text: rpsResult }, { quoted: msg }); break; }
       case "ship":      await handleShip(sock, msg, rest); break;
       case "rate":      await handleRate(sock, msg, rest); break;
       case "choose":    await handleChoose(sock, msg, rest); break;
       case "quote":     await handleQuote(sock, msg); break;
       case "roast":     await handleRoast(sock, msg, rest); break;
-      case "compliment": await handleCompliment(sock, msg); break;
+      case "compliment": await handleCompliment(sock, msg, rest); break;
       case "mock":      await handleMock(sock, msg, rest); break;
       case "reverse":   await handleReverse(sock, msg, rest); break;
       case "emojify":   await handleEmojify(sock, msg, rest); break;
       case "vapor":     await handleVapor(sock, msg, rest); break;
       case "cat":       await handleCat(sock, msg); break;
       case "dog":       await handleDog(sock, msg); break;
-      case "random":    await handleRandom(sock, msg); break;
+      case "random":    await handleRandom(sock, msg, rest); break;
 
       case "truth":
         await sock.sendMessage(jid, { text: `🔴 *Truth:* ${getTruth()}` }, { quoted: msg });
@@ -477,9 +477,9 @@ export async function handleCommand(
         break;
       }
 
-      case "trivia":    await startTrivia(sock, msg); break;
-      case "skip":      await skipTrivia(sock, msg); break;
-      case "math":      await startMath(sock, msg); break;
+      case "trivia": { const r = startTrivia(jid); await sock.sendMessage(jid, { text: r }, { quoted: msg }); break; }
+      case "skip":   { const r = skipTrivia(jid);  await sock.sendMessage(jid, { text: r }, { quoted: msg }); break; }
+      case "math":   { const r = startMath(jid);   await sock.sendMessage(jid, { text: r }, { quoted: msg }); break; }
 
       // ── TOOLS ──────────────────────────────────────────────────────────────
       case "wiki":
@@ -487,11 +487,9 @@ export async function handleCommand(
       case "weather":   await handleWeather(sock, msg, rest); break;
 
       case "translate":
-      case "tr": {
-        const tArgs = rest.split(" ");
-        await handleTranslate(sock, msg, tArgs[0] ?? "", tArgs.slice(1).join(" "));
+      case "tr":
+        await handleTranslate(sock, msg, rest);
         break;
-      }
 
       case "calc":
       case "calculate": await handleCalc(sock, msg, rest); break;
@@ -500,18 +498,18 @@ export async function handleCommand(
       case "qrcode":    await handleQRGen(sock, msg, rest); break;
 
       case "password":
-      case "pass":      await handlePassword(sock, msg, parseInt(rest) || 16); break;
+      case "pass":      await handlePassword(sock, msg, rest); break;
 
       case "shorten":
       case "urlshort":  await handleShorten(sock, msg, rest); break;
 
       case "base64": {
         const b = rest.split(" ");
-        await handleBase64(sock, msg, b[0] as "encode" | "decode", b.slice(1).join(" "));
+        await handleBase64(sock, msg, b.slice(1).join(" "), b[0] === "decode");
         break;
       }
 
-      case "binary":    await handleBinary(sock, msg, rest); break;
+      case "binary":    await handleBinary(sock, msg, rest, false); break;
       case "hash":      await handleHash(sock, msg, rest); break;
       case "time":      await handleTime(sock, msg, rest); break;
       case "define":
@@ -537,12 +535,12 @@ export async function handleCommand(
       case "toimage":   await handleStickerToImage(sock, msg); break;
       case "fancy":     await handleFancy(sock, msg, rest); break;
       case "font":      await handleFont(sock, msg, rest); break;
-      case "format":    await handleFormat(sock, msg, rest); break;
+      case "format":    await handleFormat(sock, msg, rest.split(" ")[0] ?? "", rest.split(" ").slice(1).join(" ")); break;
       case "react":     await handleReact(sock, msg, rest); break;
-      case "disappear": await handleDisappear(sock, msg, rest.toLowerCase() === "on"); break;
+      case "disappear": await handleDisappear(sock, msg, rest.toLowerCase()); break;
       case "anime":     await handleAnime(sock, msg, rest); break;
       case "crypto":    await handleCrypto(sock, msg, rest); break;
-      case "news":      await handleNews(sock, msg); break;
+      case "news":      await handleNews(sock, msg, rest); break;
       case "nasa":      await handleNASA(sock, msg); break;
       case "ip":
       case "iptrack":   await handleIPLookup(sock, msg, rest); break;
@@ -558,9 +556,9 @@ export async function handleCommand(
       // ── DOWNLOADER ─────────────────────────────────────────────────────────
       case "ytmp3":
       case "song":
-      case "play":      await handleYouTubeDownload(sock, msg, rest, "audio"); break;
+      case "play":      await handleYouTubeDownload(sock, msg, rest, true); break;
       case "ytmp4":
-      case "ytvid":     await handleYouTubeDownload(sock, msg, rest, "video"); break;
+      case "ytvid":     await handleYouTubeDownload(sock, msg, rest, false); break;
       case "ttdl":
       case "tiktok":    await handleTikTokDownload(sock, msg, rest); break;
       case "igdl":

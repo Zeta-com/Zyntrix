@@ -82,7 +82,7 @@ export async function sendCTA(
         contextInfo,
       }),
     },
-    { userJid: sock.user?.id }
+    { userJid: sock.user?.id ?? "" }
   );
 
   // relayMessage bypasses the sendMessage patch → no infinite recursion

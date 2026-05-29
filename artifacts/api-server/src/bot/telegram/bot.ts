@@ -30,7 +30,7 @@ export async function startTelegramBot() {
   // This resolves 409 Conflict when old instances are still running
   const bot = new TelegramBot(TOKEN, { polling: false });
   try {
-    await bot.deleteWebhook({ drop_pending_updates: true } as any);
+    await bot.deleteWebHook();
   } catch {}
   bot.startPolling({ restart: true });
   console.log("[Telegram] Bot started!");

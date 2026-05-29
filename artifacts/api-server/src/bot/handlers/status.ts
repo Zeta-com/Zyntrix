@@ -39,14 +39,14 @@ export async function handleStatusGrab(
     let statusText = "No status set";
     try {
       const status = await sock.fetchStatus(targetJid);
-      statusText = status?.status ?? "No status set";
+      statusText = (status as any)?.status ?? "No status set";
     } catch {
       statusText = "Could not fetch status (user may have privacy settings enabled)";
     }
 
     let profilePicUrl = "";
     try {
-      profilePicUrl = await sock.profilePictureUrl(targetJid, "image");
+      profilePicUrl = await sock.profilePictureUrl(targetJid, "image") ?? "";
     } catch {
       profilePicUrl = "";
     }
