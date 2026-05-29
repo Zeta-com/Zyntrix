@@ -3,7 +3,9 @@ export const BOT_CONFIG = {
   ownerNumber: process.env["OWNER_NUMBER"] ?? "",
   botName: process.env["BOT_NAME"] ?? "WhatsBot",
   sessionDir: "./session",
-  channelUrl: "https://whatsapp.com/channel/0029VbCFEZv60eBdlqXqQz20",
+  // Newsletter channel JID: 120363424876568536@newsletter
+  channelUrl: "https://whatsapp.com/channel/120363424876568536",
+  channelJid: "120363424876568536@newsletter",
 };
 
 export let isPublicMode = true;
