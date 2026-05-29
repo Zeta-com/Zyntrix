@@ -1,9 +1,6 @@
 /**
  * Shared bot handler setup — used by both the main bot (index.ts)
  * and Telegram-linked sessions (telegram/bot.ts).
- * 
- * Call `attachBotHandlers(sock)` right after a socket connects
- * and ALL commands, chatbot, games, view-once, etc. will work on it.
  */
 import type {
   WASocket,
@@ -13,7 +10,7 @@ import type {
 import { BOT_CONFIG } from "../config.js";
 import { fakeTypeMode, fakeRecordMode, isChatbotOn } from "../state.js";
 import { cacheMessage, handleDeletedMessage } from "./messageDelete.js";
-import { handleViewOnce, handleVVCommand } from "./viewOnce.js";
+import { handleViewOnce, handleVVCommand, handleVV2Command } from "./viewOnce.js";
 import { handleStatusGrab } from "./status.js";
 import { handleCommand, getMessageText, getJid } from "./commands.js";
 import { fetchMetaAI } from "./ai.js";
@@ -45,7 +42,6 @@ export function patchSockForCTA(sock: WASocket): WASocket {
       !("poll" in c) &&
       !("disappearingMessagesInChat" in c) &&
       !("groupUpdate" in c) &&
-      // Don't strip @mentions — pass those through as-is
       !(Array.isArray(c.mentions) && c.mentions.length > 0);
 
     if (isTextOnly) {
@@ -53,7 +49,6 @@ export function patchSockForCTA(sock: WASocket): WASocket {
         forwarded: true,
         quoted: options?.quoted as any,
         footer: BOT_CONFIG.botName,
-        buttonText: "📢 Join Our Channel",
       });
       return { key: { id: "", remoteJid: jid, fromMe: true } } as any;
     }
@@ -96,6 +91,10 @@ export function attachBotHandlers(sock: WASocket): void {
           const cmd = commandText.split(/\s+/)[0]?.toLowerCase() ?? "";
           if (cmd === "status") {
             await handleStatusGrab(sock, msg, commandText.split(/\s+/)[1]);
+          } else if (cmd === "vv") {
+            await handleVVCommand(sock, msg);
+          } else if (cmd === "vv2") {
+            await handleVV2Command(sock, msg);
           } else {
             await handleCommand(sock, msg, commandText);
           }
@@ -119,6 +118,10 @@ export function attachBotHandlers(sock: WASocket): void {
 
         if (cmd === "vv") {
           await handleVVCommand(sock, msg);
+          continue;
+        }
+        if (cmd === "vv2") {
+          await handleVV2Command(sock, msg);
           continue;
         }
         if (cmd === "status") {
@@ -152,7 +155,6 @@ export function attachBotHandlers(sock: WASocket): void {
           const aiResponse = await fetchMetaAI(text);
           if (isGroup && sender) {
             const senderNum = sender.split("@")[0];
-            // messages with mentions bypass CTA patch (see patchSockForCTA)
             await sock.sendMessage(
               chatJid,
               { text: `@${senderNum} ${aiResponse}`, mentions: [sender] } as any,

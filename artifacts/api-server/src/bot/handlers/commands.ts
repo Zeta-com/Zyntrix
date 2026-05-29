@@ -7,7 +7,7 @@ import { getTruth, getDare, getTruthOrDare } from "../games/truthordare.js";
 import { playRPS } from "../games/rps.js";
 import { startMath } from "../games/math.js";
 import { logger } from "../../lib/logger.js";
-import { setFakeType, setFakeRecord, setChatbot, isChatbotOn } from "../state.js";
+import { setFakeType, setFakeRecord, setChatbot, isChatbotOn, setAntidelete, isAntideleteOn } from "../state.js";
 import {
   handleTikTokDownload,
   handleInstagramDownload,
@@ -27,6 +27,8 @@ import {
 import {
   handleTagAll, handleGroupInfo, handleAdmins, handleProfilePic,
   handleKick, handleMuteGroup, handlePromote,
+  handleGroupInviteLink, handleJoinGroup, handleLeaveGroup,
+  handleGroupMetadata, handleRevokeInvite,
 } from "./group.js";
 import {
   handleMovieSearch, handleMovieSubs, handleMovieDownload,
@@ -36,6 +38,7 @@ import {
   handleNews, handleFancy, handleFont, handleFormat, handleReact,
   handleSpam, handleCountry, handleNASA, handleIPLookup, handleRandom,
   handleDisappear, handleAnime,
+  handleGetNewsletter, handleGetJid, handleMention, handleBroadcast,
 } from "./extra.js";
 import { handleAI, handleImageGen, handleAnimeImage } from "./ai.js";
 import { handleGroupStatus, handleSetGC } from "./groupstatus.js";
@@ -125,15 +128,31 @@ function buildMenu(senderName: string, chatJid: string): string {
 ┗❐
 
 ┏❐ 《 *GROUP MENU* 》 ❐
-┃├◆ ${p}tagall
-┃├◆ ${p}admins
-┃├◆ ${p}kick [@user]
-┃├◆ ${p}promote [@user]
-┃├◆ ${p}mute / ${p}unmute
-┃├◆ ${p}groupinfo
+┃├◆ ${p}tagall / ${p}admins
+┃├◆ ${p}kick / ${p}promote / ${p}mute / ${p}unmute
+┃├◆ ${p}groupinfo / ${p}groupmeta
+┃├◆ ${p}groupinvite / ${p}gclink
+┃├◆ ${p}joingroup [link]
+┃├◆ ${p}leavegroup
+┃├◆ ${p}revokeinvite
 ┃├◆ ${p}gs / ${p}gcstatus / ${p}swgc [caption]
 ┃├◆ ${p}setgc [invite link or JID]
 ┃├◆ ${p}getpp [@user]
+┗❐
+
+┏❐ 《 *ANTIDELETE MENU* 》 ❐
+┃├◆ ${p}antidelete on — enable for this chat
+┃├◆ ${p}antidelete off — disable for this chat
+┃├◆ ${p}antidelete — check current status
+┃├◆ ${p}vv — reveal view-once here
+┃├◆ ${p}vv2 — reveal view-once → owner DM
+┗❐
+
+┏❐ 《 *UTILITY+ MENU* 》 ❐
+┃├◆ ${p}getnewsletter [channel link]
+┃├◆ ${p}getjid [phone number]
+┃├◆ ${p}mention [number] [text]
+┃├◆ ${p}broadcast [message] (owner)
 ┗❐
 
 ┏❐ 《 *FUN MENU* 》 ❐
@@ -551,6 +570,63 @@ export async function handleCommand(
       case "spam":
         if (!isOwner(msg)) { await sock.sendMessage(jid, { text: "👑 *Owner only!*" }, { quoted: msg }); break; }
         await handleSpam(sock, msg, rest);
+        break;
+
+      // ── ANTIDELETE ─────────────────────────────────────────────────────────
+      case "antidelete":
+      case "ad": {
+        const sub = rest.trim().toLowerCase();
+        if (sub === "on") {
+          setAntidelete(jid, true);
+          await sock.sendMessage(jid, {
+            text: `🛡️ *AntiDelete ENABLED* for this chat!\n\nDeleted messages will be re-posted here with sender info.\nUse \`${config.BOT_CONFIG.prefix}antidelete off\` to disable.`,
+          }, { quoted: msg });
+        } else if (sub === "off") {
+          setAntidelete(jid, false);
+          await sock.sendMessage(jid, {
+            text: `🛡️ *AntiDelete DISABLED* for this chat.\n\nUse \`${config.BOT_CONFIG.prefix}antidelete on\` to re-enable.`,
+          }, { quoted: msg });
+        } else {
+          const status = isAntideleteOn(jid);
+          await sock.sendMessage(jid, {
+            text: `🛡️ *AntiDelete Status*\n\n` +
+              `Status: ${status ? "ENABLED 🟢" : "DISABLED 🔴"}\n\n` +
+              `Use \`${config.BOT_CONFIG.prefix}antidelete on/off\` to toggle.`,
+          }, { quoted: msg });
+        }
+        break;
+      }
+
+      // ── GROUP — NEW ────────────────────────────────────────────────────────
+      case "groupinvite":
+      case "gclink":
+      case "invitelink":  await handleGroupInviteLink(sock, msg); break;
+
+      case "joingroup":
+      case "join":        await handleJoinGroup(sock, msg, rest); break;
+
+      case "leavegroup":
+      case "leave":       await handleLeaveGroup(sock, msg); break;
+
+      case "groupmeta":
+      case "groupmetadata": await handleGroupMetadata(sock, msg); break;
+
+      case "revokeinvite":
+      case "revoke":      await handleRevokeInvite(sock, msg); break;
+
+      // ── UTILITY+ ───────────────────────────────────────────────────────────
+      case "getnewsletter":
+      case "newsletter":  await handleGetNewsletter(sock, msg, rest); break;
+
+      case "getjid":
+      case "tojid2":      await handleGetJid(sock, msg, rest); break;
+
+      case "mention":     await handleMention(sock, msg, rest); break;
+
+      case "broadcast":
+      case "bc":
+        if (!isOwner(msg)) { await sock.sendMessage(jid, { text: "👑 *Owner only!*" }, { quoted: msg }); break; }
+        await handleBroadcast(sock, msg, rest);
         break;
 
       // ── DOWNLOADER ─────────────────────────────────────────────────────────

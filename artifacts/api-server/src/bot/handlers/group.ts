@@ -135,6 +135,101 @@ export async function handleMuteGroup(sock: WASocket, msg: WAMessage, mute: bool
   }
 }
 
+// ── Demote (alias — same function, promote=false) ─────────────────────────────
+export async function handleDemote(sock: WASocket, msg: WAMessage): Promise<void> {
+  return handlePromote(sock, msg, false);
+}
+
+// ── Get group invite link ─────────────────────────────────────────────────────
+export async function handleGroupInviteLink(sock: WASocket, msg: WAMessage): Promise<void> {
+  if (!isGroup(msg)) {
+    await sock.sendMessage(jid(msg), { text: "❌ This command only works in groups!" }, { quoted: msg });
+    return;
+  }
+  try {
+    const code = await sock.groupInviteCode(jid(msg));
+    await sock.sendMessage(jid(msg), {
+      text: `🔗 *Group Invite Link*\n\nhttps://chat.whatsapp.com/${code}\n\n_Share this link to invite people to the group._`,
+    }, { quoted: msg });
+  } catch {
+    await sock.sendMessage(jid(msg), { text: "❌ Failed to get invite link. I need to be admin!" }, { quoted: msg });
+  }
+}
+
+// ── Join group via invite link ────────────────────────────────────────────────
+export async function handleJoinGroup(sock: WASocket, msg: WAMessage, link: string): Promise<void> {
+  if (!link || !link.trim()) {
+    await sock.sendMessage(jid(msg), {
+      text: "🔗 *Usage:* `.joingroup https://chat.whatsapp.com/...`",
+    }, { quoted: msg });
+    return;
+  }
+  const code = link.replace(/https?:\/\/chat\.whatsapp\.com\//i, "").trim();
+  try {
+    await sock.groupAcceptInvite(code);
+    await sock.sendMessage(jid(msg), { text: "✅ *Joined the group successfully!*" }, { quoted: msg });
+  } catch {
+    await sock.sendMessage(jid(msg), { text: "❌ Failed to join group. Link may be invalid or expired." }, { quoted: msg });
+  }
+}
+
+// ── Leave current group ────────────────────────────────────────────────────────
+export async function handleLeaveGroup(sock: WASocket, msg: WAMessage): Promise<void> {
+  if (!isGroup(msg)) {
+    await sock.sendMessage(jid(msg), { text: "❌ This command only works in groups!" }, { quoted: msg });
+    return;
+  }
+  await sock.sendMessage(jid(msg), { text: "👋 *Leaving group... Goodbye!*" }, { quoted: msg });
+  try {
+    await sock.groupLeave(jid(msg));
+  } catch {
+    // already left or kicked — ignore
+  }
+}
+
+// ── Full group metadata ────────────────────────────────────────────────────────
+export async function handleGroupMetadata(sock: WASocket, msg: WAMessage): Promise<void> {
+  if (!isGroup(msg)) {
+    await sock.sendMessage(jid(msg), { text: "❌ This command only works in groups!" }, { quoted: msg });
+    return;
+  }
+  try {
+    const m = await sock.groupMetadata(jid(msg));
+    const admins = m.participants.filter(p => p.admin).length;
+    const total  = m.participants.length;
+    const created = m.creation ? new Date((m.creation ?? 0) * 1000).toLocaleDateString() : "Unknown";
+    const text =
+      `📋 *Full Group Metadata*\n\n` +
+      `📌 *Name:* ${m.subject}\n` +
+      `🆔 *JID:* ${m.id}\n` +
+      `👤 *Members:* ${total}\n` +
+      `🛡️ *Admins:* ${admins}\n` +
+      `📅 *Created:* ${created}\n` +
+      `🔖 *Owner:* ${m.owner ? `+${m.owner.split("@")[0]}` : "Unknown"}\n` +
+      (m.desc ? `\n📝 *Description:*\n${m.desc}` : "") +
+      (m.ephemeralDuration ? `\n⏳ *Disappearing:* ${m.ephemeralDuration}s` : "");
+    await sock.sendMessage(jid(msg), { text }, { quoted: msg });
+  } catch {
+    await sock.sendMessage(jid(msg), { text: "❌ Failed to fetch group metadata." }, { quoted: msg });
+  }
+}
+
+// ── Revoke/reset group invite link ────────────────────────────────────────────
+export async function handleRevokeInvite(sock: WASocket, msg: WAMessage): Promise<void> {
+  if (!isGroup(msg)) {
+    await sock.sendMessage(jid(msg), { text: "❌ This command only works in groups!" }, { quoted: msg });
+    return;
+  }
+  try {
+    const newCode = await sock.groupRevokeInvite(jid(msg));
+    await sock.sendMessage(jid(msg), {
+      text: `♻️ *Invite link revoked!*\n\nNew link: https://chat.whatsapp.com/${newCode}`,
+    }, { quoted: msg });
+  } catch {
+    await sock.sendMessage(jid(msg), { text: "❌ Failed to revoke invite link. I need to be admin!" }, { quoted: msg });
+  }
+}
+
 // ── Promote/demote (admin only) ───────────────────────────────────────────────
 export async function handlePromote(sock: WASocket, msg: WAMessage, promote: boolean): Promise<void> {
   if (!isGroup(msg)) {
