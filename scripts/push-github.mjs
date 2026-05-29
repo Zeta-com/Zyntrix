@@ -44,7 +44,7 @@ const EXCLUDED_EXTS = new Set([".map", ".tsbuildinfo", ".log"]);
 const ROOT_FILES = [
   "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml",
   "tsconfig.base.json", "tsconfig.json",
-  "replit.md", "railway.json",
+  "replit.md", "render.yaml",
   ".gitignore", ".env.example",
 ];
 
