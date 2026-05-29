@@ -1,49 +1,58 @@
-# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
-
-# compiled output
-dist
-tmp
-out-tsc
+# ── Build outputs ──────────────────────────────────────────────────────────────
+dist/
+tmp/
+out-tsc/
 *.tsbuildinfo
 .expo
 .expo-shared
 
-# dependencies
-node_modules
+# ── Dependencies ───────────────────────────────────────────────────────────────
+node_modules/
 
-# IDEs and editors
-/.idea
+# ── SECRETS — never commit these ───────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# WhatsApp auth sessions (contain private encryption keys)
+session/
+sessions/
+
+# Runtime state (chatbot enabled JIDs, etc.)
+data/
+
+# ── Logs ───────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log
+yarn-error.log
+
+# ── Replit internals ───────────────────────────────────────────────────────────
+.cache/
+.local/
+.replit
+
+# ── OS / IDE ───────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
 .project
 .classpath
 .c9/
 *.launch
 .settings/
 *.sublime-workspace
-
-# IDE - VSCode
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# misc
+# ── Source maps (large, not needed in repo) ───────────────────────────────────
+*.map
+
+# ── Misc ───────────────────────────────────────────────────────────────────────
 /.sass-cache
 /connect.lock
 /coverage
-/libpeerconnection.log
-npm-debug.log
-yarn-error.log
-testem.log
 /typings
-
-# System Files
-.DS_Store
-Thumbs.db
-
-.cursor/rules/nx-rules.mdc
-.github/instructions/nx.instructions.md
-
-# Replit
-.cache/
-.local/
+testem.log
