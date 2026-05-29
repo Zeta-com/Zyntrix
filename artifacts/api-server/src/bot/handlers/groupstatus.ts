@@ -166,8 +166,8 @@ export async function handleGroupStatus(
   if (/audio/i.test(mtype)) {
     try {
       const buf = await downloadBuf("audio");
-      let vn = buf;
-      try { vn = await toVoiceNote(buf); } catch {}
+      let vn: Buffer = buf as Buffer;
+      try { vn = await toVoiceNote(buf) as Buffer; } catch {}
       let waveform: string | undefined;
       try { waveform = await generateWaveform(buf) ?? undefined; } catch {}
       await sendGroupStatus(sock, from, {
@@ -214,7 +214,7 @@ async function sendGroupStatus(sock: WASocket, targetJid: string, content: any) 
         },
       },
     } as any,
-    {}
+    { userJid: sock.user?.id ?? "" }
   );
 
   await sock.relayMessage(targetJid, generatedMsg.message!, { messageId: generatedMsg.key.id! });

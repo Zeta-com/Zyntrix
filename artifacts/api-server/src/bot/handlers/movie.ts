@@ -76,7 +76,7 @@ async function sendMovieCarousel(
   query: string
 ) {
   const from = jid(msg);
-  const cards: proto.Message.InteractiveMessage.ICard[] = [];
+  const cards: any[] = [];
   const FALLBACK_IMG = "https://i.ibb.co/mVvK7CFB/ad09bf786822.jpg";
 
   for (const movie of results) {
@@ -126,7 +126,7 @@ async function sendMovieCarousel(
         ];
 
     cards.push(
-      proto.Message.InteractiveMessage.Card.create({
+      (proto.Message.InteractiveMessage as any).Card.create({
         body: proto.Message.InteractiveMessage.Body.create({ text: desc }),
         header: proto.Message.InteractiveMessage.Header.create({
           title: `🎬 ${title}`,
@@ -160,7 +160,7 @@ async function sendMovieCarousel(
         },
       },
     },
-    { quoted: msg }
+    { quoted: msg, userJid: sock.user?.id ?? "" }
   );
 
   await sock.relayMessage(from, generated.message!, { messageId: generated.key.id! });
