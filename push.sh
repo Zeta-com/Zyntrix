@@ -1,3 +1,3 @@
 #!/bin/bash
-# Push to GitHub — no token prompt (stored via credential helper)
-git push https://github.com/Zeta-com/Zeta-AI-.git main --force
+# Push to GitHub — uses GITHUB_TOKEN secret, no prompts needed
+node /home/runner/workspace/scripts/push-github.mjs
