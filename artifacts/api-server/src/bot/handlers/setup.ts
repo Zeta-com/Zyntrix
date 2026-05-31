@@ -18,7 +18,7 @@ import { hasActiveTrivia, checkTriviaAnswer } from "../games/trivia.js";
 import { hasActiveMath, checkMathAnswer } from "../games/math.js";
 import { sendCTA } from "../helpers/cta.js";
 
-// ── CTA patch: text-only messages get forwarded + channel-button style ────────
+// ── CTA patch: text-only messages get the native "View channel" style ─────────
 export function patchSockForCTA(sock: WASocket): WASocket {
   const original = sock.sendMessage.bind(sock);
 
@@ -73,15 +73,15 @@ export function attachBotHandlers(sock: WASocket): void {
       const isFromMe = msg.key.fromMe === true;
       const isGroup = chatJid.endsWith("@g.us");
 
-      if (!isFromMe) {
-        cacheMessage(msg);
+      // Cache ALL messages (including fromMe) so group admins deleting
+      // the bot owner's messages are also caught by antidelete
+      cacheMessage(msg);
 
-        if (fakeTypeMode || fakeRecordMode) {
-          sock.sendPresenceUpdate(
-            fakeRecordMode ? "recording" : ("composing" as any),
-            chatJid
-          ).catch(() => {});
-        }
+      if (!isFromMe && (fakeTypeMode || fakeRecordMode)) {
+        sock.sendPresenceUpdate(
+          fakeRecordMode ? "recording" : ("composing" as any),
+          chatJid
+        ).catch(() => {});
       }
 
       // ── Owner sending commands from their own phone ──────────────────────
@@ -170,7 +170,20 @@ export function attachBotHandlers(sock: WASocket): void {
     }
   });
 
+  // ── Antidelete: primary event (message key revoke) ──────────────────────────
   sock.ev.on("messages.delete", async (update) => {
     if ("keys" in update) await handleDeletedMessage(sock, update);
+  });
+
+  // ── Antidelete: secondary event — Baileys v7 also fires messages.update
+  //    with a ProtocolMessage REVOKE (type=0) when someone deletes for everyone
+  sock.ev.on("messages.update" as any, async (updates: any[]) => {
+    for (const { key, update } of updates) {
+      const proto = update?.message?.protocolMessage;
+      if (proto?.type === 0 && proto?.key) {
+        // proto.key is the key of the message that was deleted
+        await handleDeletedMessage(sock, { keys: [proto.key] });
+      }
+    }
   });
 }
