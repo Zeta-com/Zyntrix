@@ -40,7 +40,7 @@ import {
   handleDisappear, handleAnime,
   handleGetNewsletter, handleGetJid, handleMention, handleBroadcast,
 } from "./extra.js";
-import { handleAI, handleImageGen, handleAnimeImage } from "./ai.js";
+import { handleAI, handleImageGen, handleAnimeImage, handleNbCommand } from "./ai.js";
 import { handleGroupStatus, handleSetGC } from "./groupstatus.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -117,6 +117,7 @@ function buildMenu(senderName: string, chatJid: string): string {
 ┃├◆ ${p}ai / ${p}gpt [question]
 ┃├◆ ${p}img [image prompt]
 ┃├◆ ${p}animage [anime prompt]
+┃├◆ ${p}nb — cinematic transform (reply to image)
 ┃├◆ ${p}chatbot on/off
 ┃├◆ ${p}anime [name]
 ┗❐
@@ -362,6 +363,12 @@ export async function handleCommand(
 
       case "animage":
         await handleAnimeImage(sock, msg, rest);
+        break;
+
+      case "nb":
+      case "cinematic":
+      case "filmgrade":
+        await handleNbCommand(sock, msg);
         break;
 
       // ── CHATBOT ON/OFF ─────────────────────────────────────────────────────

@@ -7,10 +7,10 @@ import {
 import { BOT_CONFIG } from "../config.js";
 
 /**
- * Sends a text message with the official WhatsApp "View channel" button —
- * identical to what appears when someone forwards a post from a WhatsApp
- * newsletter/channel. Uses sourceId (newsletter JID) which is the key that
- * triggers the native channel card in WhatsApp clients.
+ * Sends a text message with the native WhatsApp "View channel" button —
+ * identical to what appears when a post is forwarded from a WhatsApp newsletter.
+ * Uses forwardedNewsletterMessageInfo which is the correct field that triggers
+ * the native channel card (not externalAdReply which shows an ad card).
  */
 export async function sendCTA(
   sock: WASocket,
@@ -24,23 +24,17 @@ export async function sendCTA(
     forwarded?: boolean;
   }
 ) {
-  const channelUrl = opts?.url ?? BOT_CONFIG.channelUrl;
-  const botName    = opts?.footer ?? BOT_CONFIG.botName;
+  const botName = opts?.footer ?? BOT_CONFIG.botName;
 
-  // sourceId = newsletter JID → WhatsApp renders the native "View channel" button
   const contextInfo = proto.ContextInfo.create({
     isForwarded: true,
     forwardingScore: 999,
-    externalAdReply: proto.ContextInfo.ExternalAdReplyInfo.create({
-      title: botName,
-      body: "WhatsApp Channel",
-      sourceUrl: channelUrl,
-      sourceId: BOT_CONFIG.channelJid,
-      mediaType: 1,
-      renderLargerThumbnail: false,
-      showAdAttribution: false,
-      containsAutoReply: false,
-    }),
+    forwardedNewsletterMessageInfo:
+      proto.ContextInfo.ForwardedNewsletterMessageInfo.create({
+        newsletterJid: BOT_CONFIG.channelJid,
+        serverMessageId: -1,
+        newsletterName: botName,
+      }),
   });
 
   const generated = generateWAMessageFromContent(
@@ -51,7 +45,10 @@ export async function sendCTA(
         contextInfo,
       }),
     },
-    { userJid: sock.user?.id ?? "" }
+    {
+      userJid: sock.user?.id ?? "",
+      quoted: opts?.quoted as any,
+    }
   );
 
   await sock.relayMessage(jid, generated.message!, {
