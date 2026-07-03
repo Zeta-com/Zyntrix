@@ -50,9 +50,17 @@ export async function sendCarouselMenu(
       },
     }));
 
+    // `messageContextInfo.deviceListMetadataVersion: 2` is what tells current
+    // WhatsApp clients this is a v3 "native flow" message they know how to
+    // render. Without it, clients show "your version of WhatsApp doesn't
+    // support it" even though the schema itself is otherwise valid.
     const interactiveMessage = proto.Message.InteractiveMessage.create({
       body: proto.Message.InteractiveMessage.Body.create({ text: opts.bodyText }),
       footer: proto.Message.InteractiveMessage.Footer.create({ text: opts.footerText }),
+      header: proto.Message.InteractiveMessage.Header.create({
+        title: "",
+        hasMediaAttachment: false,
+      }),
       carouselMessage: proto.Message.InteractiveMessage.CarouselMessage.create({
         cards: cards as any,
       }),
@@ -62,7 +70,13 @@ export async function sendCarouselMenu(
       jid,
       {
         viewOnceMessage: proto.Message.FutureProofMessage.create({
-          message: { interactiveMessage },
+          message: {
+            messageContextInfo: {
+              deviceListMetadata: {},
+              deviceListMetadataVersion: 2,
+            },
+            interactiveMessage,
+          },
         }),
       },
       {
