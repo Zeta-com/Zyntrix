@@ -1,8 +1,9 @@
-// Native WhatsApp interactive carousel menu — swipeable cards with a header
-// video/image, title, description, and a quick-reply button that runs a
-// command. This mirrors a proven-working payload shape (fkontak quoted
-// context + messageContextInfo.deviceListMetadataVersion: 2 + plain-object
-// cards) instead of the earlier version that WhatsApp silently rejected.
+// Native WhatsApp interactive carousel menu — ported as closely as possible
+// from a proven-working reference implementation (fkontak quoted context +
+// messageContextInfo.deviceListMetadataVersion: 2 + per-card nativeFlowMessage
+// quick_reply buttons + gifPlayback video header). Only the categories/
+// commands and bot name are ours — the message-building shape below is
+// intentionally left matching the reference script.
 import axios from "axios";
 import {
   generateWAMessageFromContent,
@@ -32,45 +33,55 @@ export async function sendCarouselMenu(
 ): Promise<boolean> {
   try {
     let media: Awaited<ReturnType<typeof prepareWAMessageMedia>> | null = null;
+
     if (opts.videoUrl) {
       try {
-        const { data } = await axios.get<ArrayBuffer>(opts.videoUrl, {
+        const { data: gifBuffer } = await axios.get<ArrayBuffer>(opts.videoUrl, {
           responseType: "arraybuffer",
           timeout: 8000,
         });
+
         media = await prepareWAMessageMedia(
-          { video: Buffer.from(data), gifPlayback: true },
+          { video: Buffer.from(gifBuffer), gifPlayback: true },
           { upload: sock.waUploadToServer }
         );
       } catch {
-        media = null;
+        console.log("[MENU WARNING] Failed to load the GIF. Rendering menu without it.");
       }
     }
 
-    const cards = opts.cards.map((card) => ({
-      header: {
-        title: " ",
-        ...(media?.videoMessage
-          ? { hasMediaAttachment: true, videoMessage: media.videoMessage }
-          : { hasMediaAttachment: false }),
-      },
-      body: { text: `*${card.title}*\n${card.description}` },
-      nativeFlowMessage: {
-        buttons: [
-          {
-            name: "quick_reply",
-            buttonParamsJson: JSON.stringify({
-              display_text: card.buttonText,
-              id: card.command,
-            }),
-          },
-        ],
-      },
-    }));
+    const cards = opts.cards.map((cat) => {
+      let cardHeader = proto.Message.InteractiveMessage.Header.create({ title: " " });
+
+      if (media?.videoMessage) {
+        cardHeader = proto.Message.InteractiveMessage.Header.create({
+          title: " ",
+          hasMediaAttachment: true,
+          videoMessage: media.videoMessage,
+        });
+      }
+
+      return {
+        body: proto.Message.InteractiveMessage.Body.create({
+          text: `*${cat.title}*\n${cat.description}\n\n| © ZYNTRIX`,
+        }),
+        header: cardHeader,
+        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+          buttons: [
+            {
+              name: "quick_reply",
+              buttonParamsJson: JSON.stringify({
+                display_text: cat.buttonText,
+                id: cat.command,
+              }),
+            },
+          ],
+        }),
+      };
+    });
 
     const interactiveMessage = proto.Message.InteractiveMessage.create({
       body: proto.Message.InteractiveMessage.Body.create({ text: opts.bodyText }),
-      contextInfo: proto.ContextInfo.create({ mentionedJid: [opts.sender] }),
       carouselMessage: proto.Message.InteractiveMessage.CarouselMessage.create({
         cards: cards as any,
         messageVersion: 1,
@@ -96,31 +107,23 @@ export async function sendCarouselMenu(
       message: fkontak,
     };
 
-    const generated = generateWAMessageFromContent(
+    const msg = generateWAMessageFromContent(
       jid,
       {
-        viewOnceMessage: proto.Message.FutureProofMessage.create({
+        viewOnceMessage: {
           message: {
-            messageContextInfo: {
-              deviceListMetadata: {},
-              deviceListMetadataVersion: 2,
-            },
+            messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
             interactiveMessage,
           },
-        }),
-      },
-      {
-        userJid: sock.user?.id ?? "",
-        quoted: (opts.quoted ?? fakeQuoted) as any,
-      }
+        },
+      } as any,
+      { quoted: opts.quoted ?? fakeQuoted, mentions: [opts.sender] } as any
     );
 
-    await sock.relayMessage(jid, generated.message!, {
-      messageId: generated.key.id!,
-    });
+    await sock.relayMessage(jid, msg.message!, { messageId: msg.key.id! });
     return true;
   } catch (err) {
-    console.error("[MENU] carousel send failed:", err);
+    console.error("[MENU ERROR]", err);
     return false;
   }
 }
