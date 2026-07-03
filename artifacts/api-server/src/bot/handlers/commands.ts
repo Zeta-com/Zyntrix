@@ -42,6 +42,8 @@ import {
 } from "./extra.js";
 import { handleAI, handleImageGen, handleAnimeImage, handleNbCommand } from "./ai.js";
 import { handleGroupStatus, handleSetGC } from "./groupstatus.js";
+import { handleGrabStatus } from "./status.js";
+import { sendCarouselMenu, type MenuCard } from "../helpers/carouselMenu.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 export function getSender(msg: WAMessage): string {
@@ -147,6 +149,7 @@ function buildMenu(senderName: string, chatJid: string): string {
 ┃├◆ ${p}antidelete — check current status
 ┃├◆ ${p}vv — reveal view-once here
 ┃├◆ ${p}vv2 — reveal view-once → owner DM
+┃├◆ ${p}grabstatus [@user/number] — send status to your DM (owner)
 ┗❐
 
 ┏❐ 《 *UTILITY+ MENU* 》 ❐
@@ -227,12 +230,32 @@ export async function handleCommand(
       // ── MENU ──────────────────────────────────────────────────────────────
       case "menu":
       case "help":
-      case "start":
-        await sock.sendMessage(jid, {
-          image: { url: MENU_IMAGE_URL },
-          caption: buildMenu(senderName, jid),
-        } as any, { quoted: msg });
+      case "start": {
+        const p = config.BOT_CONFIG.prefix;
+        const cards: MenuCard[] = [
+          { title: "🤖 AI Tools", description: "Chat, generate images & cinematic transforms", imageUrl: MENU_IMAGE_URL, buttonText: "Open AI Menu", command: `${p}ai` },
+          { title: "🎵 Downloads", description: "YouTube, TikTok & Instagram downloader", imageUrl: MENU_IMAGE_URL, buttonText: "Open Downloads", command: `${p}song` },
+          { title: "🎮 Games & Fun", description: "Trivia, truth or dare, RPS, math & more", imageUrl: MENU_IMAGE_URL, buttonText: "Open Fun Menu", command: `${p}trivia` },
+          { title: "🛠️ Utilities", description: "Weather, translate, QR codes, calculators", imageUrl: MENU_IMAGE_URL, buttonText: "Open Tools", command: `${p}weather` },
+          { title: "👥 Group Tools", description: "Tag all, admins, invite links & more", imageUrl: MENU_IMAGE_URL, buttonText: "Open Group Menu", command: `${p}groupinfo` },
+        ];
+
+        const sent = await sendCarouselMenu(sock, jid, {
+          bodyText: `👋 Hey *${senderName}*! Welcome to *${config.BOT_CONFIG.botName}*.\n\nSwipe through the cards below or tap a button to jump straight in.`,
+          footerText: `${config.BOT_CONFIG.botName} • ${config.isPublicMode ? "Public 🌍" : "Private 🔒"}`,
+          cards,
+          quoted: msg,
+        });
+
+        if (!sent) {
+          // Fallback for clients that don't support interactive carousels
+          await sock.sendMessage(jid, {
+            image: { url: MENU_IMAGE_URL },
+            caption: buildMenu(senderName, jid),
+          } as any, { quoted: msg });
+        }
         break;
+      }
 
       // ── STATUS ─────────────────────────────────────────────────────────────
       case "alive": {
@@ -646,6 +669,13 @@ export async function handleCommand(
       case "tiktok":    await handleTikTokDownload(sock, msg, rest); break;
       case "igdl":
       case "instagram": await handleInstagramDownload(sock, msg, rest); break;
+
+      // ── STATUS GRAB ───────────────────────────────────────────────────────
+      case "grabstatus":
+      case "getstatus":
+        if (!isOwner(msg)) { await sock.sendMessage(jid, { text: "👑 *Owner only!*" }, { quoted: msg }); break; }
+        await handleGrabStatus(sock, msg, rest);
+        break;
 
       default:
         break;

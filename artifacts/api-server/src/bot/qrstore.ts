@@ -18,6 +18,11 @@ export function setConnected() {
   broadcast({ type: "connected" });
 }
 
+export function setDisconnected() {
+  isConnected = false;
+  broadcast({ type: "disconnected" });
+}
+
 export function getQR()          { return currentQR; }
 export function getIsConnected() { return isConnected; }
 export function setSock(s: WASocket | null) { activeSock = s; }

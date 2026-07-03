@@ -12,6 +12,7 @@ import { fakeTypeMode, fakeRecordMode, isChatbotOn } from "../state.js";
 import { cacheMessage, handleDeletedMessage } from "./messageDelete.js";
 import { handleViewOnce, handleVVCommand, handleVV2Command } from "./viewOnce.js";
 import { handleStatusGrab } from "./status.js";
+import { cacheStatusUpdate } from "./statusStore.js";
 import { handleCommand, getMessageText, getJid } from "./commands.js";
 import { fetchMetaAI } from "./ai.js";
 import { hasActiveTrivia, checkTriviaAnswer } from "../games/trivia.js";
@@ -72,6 +73,12 @@ export function attachBotHandlers(sock: WASocket): void {
       const sender = msg.key.participant ?? msg.key.remoteJid ?? "";
       const isFromMe = msg.key.fromMe === true;
       const isGroup = chatJid.endsWith("@g.us");
+
+      // ── Status broadcast — cache so `.grabstatus` can forward it later ────
+      if (chatJid === "status@broadcast") {
+        if (!isFromMe) cacheStatusUpdate(msg);
+        continue;
+      }
 
       // Cache ALL messages (including fromMe) so group admins deleting
       // the bot owner's messages are also caught by antidelete
@@ -150,19 +157,12 @@ export function attachBotHandlers(sock: WASocket): void {
       }
 
       // ── Chatbot (AI auto-reply) ───────────────────────────────────────────
+      // Replies quote the sender's message instead of @mentioning them —
+      // a reply already makes the context clear without an unnecessary tag.
       if (isChatbotOn(chatJid)) {
         try {
           const aiResponse = await fetchMetaAI(text);
-          if (isGroup && sender) {
-            const senderNum = sender.split("@")[0];
-            await sock.sendMessage(
-              chatJid,
-              { text: `@${senderNum} ${aiResponse}`, mentions: [sender] } as any,
-              { quoted: msg }
-            );
-          } else {
-            await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
-          }
+          await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
         } catch (err: any) {
           console.error("[Chatbot] Failed to send reply:", err?.message ?? err);
         }
