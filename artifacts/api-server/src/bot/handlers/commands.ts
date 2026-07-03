@@ -245,7 +245,7 @@ export async function handleCommand(
         ];
 
         const sent = await sendCarouselMenu(sock, jid, {
-          bodyText: `👋 Hey *@${sender.split("@")[0]}*! Welcome to *${config.BOT_CONFIG.botName}*.\n\nSwipe to explore all command categories! 📚`,
+          bodyText: `> © ${config.BOT_CONFIG.botName}\n┏ ◆ MOOD: 🧪\n┗ ◆ ${config.BOT_CONFIG.botName} Bot\n\n👋 Hey *@${sender.split("@")[0]}*\nSwipe to explore all command categories! 📚`,
           cards,
           sender,
           quoted: msg,
