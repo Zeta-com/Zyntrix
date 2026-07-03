@@ -231,29 +231,37 @@ export async function handleCommand(
       case "menu":
       case "help":
       case "start": {
-        const p = config.BOT_CONFIG.prefix;
-        const cards: MenuCard[] = [
-          { title: "🤖 AI Tools", description: "Chat, generate images & cinematic transforms", imageUrl: MENU_IMAGE_URL, buttonText: "Open AI Menu", command: `${p}ai` },
-          { title: "🎵 Downloads", description: "YouTube, TikTok & Instagram downloader", imageUrl: MENU_IMAGE_URL, buttonText: "Open Downloads", command: `${p}song` },
-          { title: "🎮 Games & Fun", description: "Trivia, truth or dare, RPS, math & more", imageUrl: MENU_IMAGE_URL, buttonText: "Open Fun Menu", command: `${p}trivia` },
-          { title: "🛠️ Utilities", description: "Weather, translate, QR codes, calculators", imageUrl: MENU_IMAGE_URL, buttonText: "Open Tools", command: `${p}weather` },
-          { title: "👥 Group Tools", description: "Tag all, admins, invite links & more", imageUrl: MENU_IMAGE_URL, buttonText: "Open Group Menu", command: `${p}groupinfo` },
-        ];
+        // NOTE: native WhatsApp "interactive carousel" messages are an
+        // unofficial, undocumented feature. WhatsApp has been rejecting them
+        // outright on regular (non-business) accounts — showing "your
+        // version of WhatsApp doesn't support it" regardless of the payload
+        // — so we default to the classic text+image menu, which always
+        // works. Set MENU_STYLE=carousel to try the experimental carousel.
+        if (process.env["MENU_STYLE"] === "carousel") {
+          const p = config.BOT_CONFIG.prefix;
+          const cards: MenuCard[] = [
+            { title: "🤖 AI Tools", description: "Chat, generate images & cinematic transforms", imageUrl: MENU_IMAGE_URL, buttonText: "Open AI Menu", command: `${p}ai` },
+            { title: "🎵 Downloads", description: "YouTube, TikTok & Instagram downloader", imageUrl: MENU_IMAGE_URL, buttonText: "Open Downloads", command: `${p}song` },
+            { title: "🎮 Games & Fun", description: "Trivia, truth or dare, RPS, math & more", imageUrl: MENU_IMAGE_URL, buttonText: "Open Fun Menu", command: `${p}trivia` },
+            { title: "🛠️ Utilities", description: "Weather, translate, QR codes, calculators", imageUrl: MENU_IMAGE_URL, buttonText: "Open Tools", command: `${p}weather` },
+            { title: "👥 Group Tools", description: "Tag all, admins, invite links & more", imageUrl: MENU_IMAGE_URL, buttonText: "Open Group Menu", command: `${p}groupinfo` },
+          ];
 
-        const sent = await sendCarouselMenu(sock, jid, {
-          bodyText: `👋 Hey *${senderName}*! Welcome to *${config.BOT_CONFIG.botName}*.\n\nSwipe through the cards below or tap a button to jump straight in.`,
-          footerText: `${config.BOT_CONFIG.botName} • ${config.isPublicMode ? "Public 🌍" : "Private 🔒"}`,
-          cards,
-          quoted: msg,
-        });
+          const sent = await sendCarouselMenu(sock, jid, {
+            bodyText: `👋 Hey *${senderName}*! Welcome to *${config.BOT_CONFIG.botName}*.\n\nSwipe through the cards below or tap a button to jump straight in.`,
+            footerText: `${config.BOT_CONFIG.botName} • ${config.isPublicMode ? "Public 🌍" : "Private 🔒"}`,
+            cards,
+            quoted: msg,
+          });
 
-        if (!sent) {
-          // Fallback for clients that don't support interactive carousels
-          await sock.sendMessage(jid, {
-            image: { url: MENU_IMAGE_URL },
-            caption: buildMenu(senderName, jid),
-          } as any, { quoted: msg });
+          if (sent) break;
+          // fall through to text menu if the carousel send failed
         }
+
+        await sock.sendMessage(jid, {
+          image: { url: MENU_IMAGE_URL },
+          caption: buildMenu(senderName, jid),
+        } as any, { quoted: msg });
         break;
       }
 
