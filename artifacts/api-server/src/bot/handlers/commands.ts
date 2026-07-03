@@ -231,37 +231,77 @@ export async function handleCommand(
       case "menu":
       case "help":
       case "start": {
-        // NOTE: native WhatsApp "interactive carousel" messages are an
-        // unofficial, undocumented feature. WhatsApp has been rejecting them
-        // outright on regular (non-business) accounts — showing "your
-        // version of WhatsApp doesn't support it" regardless of the payload
-        // — so we default to the classic text+image menu, which always
-        // works. Set MENU_STYLE=carousel to try the experimental carousel.
-        if (process.env["MENU_STYLE"] === "carousel") {
-          const p = config.BOT_CONFIG.prefix;
-          const cards: MenuCard[] = [
-            { title: "🤖 AI Tools", description: "Chat, generate images & cinematic transforms", imageUrl: MENU_IMAGE_URL, buttonText: "Open AI Menu", command: `${p}ai` },
-            { title: "🎵 Downloads", description: "YouTube, TikTok & Instagram downloader", imageUrl: MENU_IMAGE_URL, buttonText: "Open Downloads", command: `${p}song` },
-            { title: "🎮 Games & Fun", description: "Trivia, truth or dare, RPS, math & more", imageUrl: MENU_IMAGE_URL, buttonText: "Open Fun Menu", command: `${p}trivia` },
-            { title: "🛠️ Utilities", description: "Weather, translate, QR codes, calculators", imageUrl: MENU_IMAGE_URL, buttonText: "Open Tools", command: `${p}weather` },
-            { title: "👥 Group Tools", description: "Tag all, admins, invite links & more", imageUrl: MENU_IMAGE_URL, buttonText: "Open Group Menu", command: `${p}groupinfo` },
-          ];
+        const p = config.BOT_CONFIG.prefix;
+        const sender = getSender(msg);
+        const cards: MenuCard[] = [
+          { title: "🎵 MEDIA TOOLS", description: "Download YouTube, TikTok, Instagram & movies.", buttonText: "📂 Media Cmds", command: `${p}listmedia` },
+          { title: "🧠 AI FEATURES", description: "Chat, image generation & cinematic transforms.", buttonText: "🤖 AI Cmds", command: `${p}listai` },
+          { title: "🎮 FUN & GAMES", description: "Trivia, truth or dare, RPS, math & more.", buttonText: "🎲 Fun Cmds", command: `${p}listfun` },
+          { title: "🛠️ UTILITIES", description: "Weather, translate, QR codes, calculators & more.", buttonText: "⚙️ Tools Cmds", command: `${p}listtools` },
+          { title: "👥 GROUP & ADMIN", description: "Tag all, admins, invite links & moderation.", buttonText: "🛡️ Group Cmds", command: `${p}listgroup` },
+          { title: "⚙️ SYSTEM & OWNER", description: "Bot status, owner tools & configuration.", buttonText: "👑 System Cmds", command: `${p}listsystem` },
+          { title: "🏓 BOT PING", description: "Check the bot's response speed and latency.", buttonText: "⚡ Check Ping", command: `${p}ping` },
+          { title: "⏱️ BOT UPTIME", description: "See how long the bot has been running.", buttonText: "⏳ Check Uptime", command: `${p}uptime` },
+        ];
 
-          const sent = await sendCarouselMenu(sock, jid, {
-            bodyText: `👋 Hey *${senderName}*! Welcome to *${config.BOT_CONFIG.botName}*.\n\nSwipe through the cards below or tap a button to jump straight in.`,
-            footerText: `${config.BOT_CONFIG.botName} • ${config.isPublicMode ? "Public 🌍" : "Private 🔒"}`,
-            cards,
-            quoted: msg,
-          });
+        const sent = await sendCarouselMenu(sock, jid, {
+          bodyText: `👋 Hey *@${sender.split("@")[0]}*! Welcome to *${config.BOT_CONFIG.botName}*.\n\nSwipe to explore all command categories! 📚`,
+          cards,
+          sender,
+          quoted: msg,
+        });
 
-          if (sent) break;
-          // fall through to text menu if the carousel send failed
+        if (!sent) {
+          // Fallback for clients that reject the interactive carousel
+          await sock.sendMessage(jid, {
+            image: { url: MENU_IMAGE_URL },
+            caption: buildMenu(senderName, jid),
+          } as any, { quoted: msg });
         }
+        break;
+      }
 
+      // ── MENU CATEGORY LISTS (buttons from the carousel land here) ──────────
+      case "listmedia": {
+        const p = config.BOT_CONFIG.prefix;
         await sock.sendMessage(jid, {
-          image: { url: MENU_IMAGE_URL },
-          caption: buildMenu(senderName, jid),
-        } as any, { quoted: msg });
+          text: `┏ ❑ ⌜ *MEDIA TOOLS* ⌟ ◆\n┣ ◆ ${p}song / ${p}ytmp3 [search/url]\n┣ ◆ ${p}ytvid / ${p}ytmp4 [search/url]\n┣ ◆ ${p}ttdl [tiktok url]\n┣ ◆ ${p}igdl [instagram url]\n┣ ◆ ${p}movie / ${p}sm [title]\n┣ ◆ ${p}dlmovie [id] [season] [ep]\n┗ ◆ ${p}smsubs [id] [season] [ep]`,
+        }, { quoted: msg });
+        break;
+      }
+      case "listai": {
+        const p = config.BOT_CONFIG.prefix;
+        await sock.sendMessage(jid, {
+          text: `┏ ❑ ⌜ *AI FEATURES* ⌟ ◆\n┣ ◆ ${p}ai / ${p}gpt [question]\n┣ ◆ ${p}img / ${p}imagine [prompt]\n┣ ◆ ${p}animage [anime prompt]\n┣ ◆ ${p}nb — cinematic transform (reply to image)\n┣ ◆ ${p}chatbot on/off\n┗ ◆ ${p}anime [name]`,
+        }, { quoted: msg });
+        break;
+      }
+      case "listfun": {
+        const p = config.BOT_CONFIG.prefix;
+        await sock.sendMessage(jid, {
+          text: `┏ ❑ ⌜ *FUN & GAMES* ⌟ ◆\n┣ ◆ ${p}joke / ${p}meme / ${p}fact\n┣ ◆ ${p}truth / ${p}dare / ${p}tod\n┣ ◆ ${p}8ball [question]\n┣ ◆ ${p}dice / ${p}coinflip / ${p}slots\n┣ ◆ ${p}rps [r/p/s]\n┣ ◆ ${p}ship / ${p}rate / ${p}choose\n┣ ◆ ${p}quote / ${p}roast / ${p}compliment\n┣ ◆ ${p}mock / ${p}reverse / ${p}emojify\n┣ ◆ ${p}trivia / ${p}math\n┗ ◆ ${p}cat / ${p}dog / ${p}random`,
+        }, { quoted: msg });
+        break;
+      }
+      case "listtools": {
+        const p = config.BOT_CONFIG.prefix;
+        await sock.sendMessage(jid, {
+          text: `┏ ❑ ⌜ *UTILITIES* ⌟ ◆\n┣ ◆ ${p}wiki [topic]\n┣ ◆ ${p}weather [city]\n┣ ◆ ${p}translate [lang] [text]\n┣ ◆ ${p}calc [expression]\n┣ ◆ ${p}qr [text]\n┣ ◆ ${p}password [length]\n┣ ◆ ${p}shorten [url]\n┣ ◆ ${p}base64 encode/decode [text]\n┣ ◆ ${p}binary / ${p}hash [text]\n┣ ◆ ${p}define [word]\n┣ ◆ ${p}screenshot [url]\n┣ ◆ ${p}sticker / ${p}toimage\n┣ ◆ ${p}fancy / ${p}vapor / ${p}emojify [text]\n┣ ◆ ${p}crypto [coin]\n┣ ◆ ${p}news / ${p}nasa\n┣ ◆ ${p}ip [address] / ${p}country [name]\n┣ ◆ ${p}github [user]\n┗ ◆ ${p}disappear on/off`,
+        }, { quoted: msg });
+        break;
+      }
+      case "listgroup": {
+        const p = config.BOT_CONFIG.prefix;
+        await sock.sendMessage(jid, {
+          text: `┏ ❑ ⌜ *GROUP & ADMIN* ⌟ ◆\n┣ ◆ ${p}tagall / ${p}admins\n┣ ◆ ${p}kick / ${p}promote / ${p}mute / ${p}unmute\n┣ ◆ ${p}groupinfo / ${p}groupmeta\n┣ ◆ ${p}groupinvite / ${p}gclink\n┣ ◆ ${p}joingroup [link] / ${p}leavegroup\n┣ ◆ ${p}revokeinvite\n┣ ◆ ${p}gs / ${p}gcstatus / ${p}swgc [caption]\n┣ ◆ ${p}setgc [invite link or JID]\n┗ ◆ ${p}getpp [@user]`,
+        }, { quoted: msg });
+        break;
+      }
+      case "listsystem": {
+        const p = config.BOT_CONFIG.prefix;
+        await sock.sendMessage(jid, {
+          text: `┏ ❑ ⌜ *SYSTEM & OWNER* ⌟ ◆\n┣ ◆ ${p}ping / ${p}uptime / ${p}alive\n┣ ◆ ${p}owner / ${p}setowner [number] [name?]\n┣ ◆ ${p}public / ${p}private\n┣ ◆ ${p}antidelete on/off\n┣ ◆ ${p}grabstatus [@user/number]\n┣ ◆ ${p}faketype on/off / ${p}fakerecord on/off\n┣ ◆ ${p}broadcast [message] (owner)\n┗ ◆ ${p}getnewsletter [channel link]`,
+        }, { quoted: msg });
         break;
       }
 

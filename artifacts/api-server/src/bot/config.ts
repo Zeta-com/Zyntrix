@@ -1,7 +1,7 @@
 export const BOT_CONFIG = {
   prefix: ".",
   ownerNumber: process.env["OWNER_NUMBER"] ?? "",
-  botName: process.env["BOT_NAME"] ?? "WhatsBot",
+  botName: process.env["BOT_NAME"] ?? "Zyntrix",
   sessionDir: "./session",
   // Newsletter channel JID: 120363424876568536@newsletter
   channelUrl: "https://whatsapp.com/channel/120363424876568536",
