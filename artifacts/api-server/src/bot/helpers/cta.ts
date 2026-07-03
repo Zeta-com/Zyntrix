@@ -26,6 +26,18 @@ export async function sendCTA(
 ) {
   const botName = opts?.footer ?? BOT_CONFIG.botName;
 
+  // fkontak — fake "WhatsApp Business" contact card shown as the quoted
+  // message context, layered together with the native channel forward info.
+  // The "0@s.whatsapp.net" participant JID makes it render like an official
+  // system-generated contact, not a regular user message.
+  const fkontak = proto.Message.create({
+    contactMessage: proto.Message.ContactMessage.create({
+      displayName: "WhatsApp Business ✅",
+      vcard:
+        "BEGIN:VCARD\nVERSION:3.0\nFN:WhatsApp Business\nORG:WhatsApp Inc.\nEND:VCARD",
+    }),
+  });
+
   const contextInfo = proto.ContextInfo.create({
     isForwarded: true,
     forwardingScore: 999,
@@ -35,6 +47,10 @@ export async function sendCTA(
         serverMessageId: -1,
         newsletterName: botName,
       }),
+    participant: "0@s.whatsapp.net",
+    remoteJid: "status@broadcast",
+    stanzaId: `FKONTAK-${Date.now()}`,
+    quotedMessage: fkontak,
   });
 
   const generated = generateWAMessageFromContent(
