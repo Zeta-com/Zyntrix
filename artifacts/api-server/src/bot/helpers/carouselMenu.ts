@@ -1,9 +1,19 @@
-// Native WhatsApp interactive carousel menu — ported as closely as possible
-// from a proven-working reference implementation (fkontak quoted context +
-// messageContextInfo.deviceListMetadataVersion: 2 + per-card nativeFlowMessage
-// quick_reply buttons + gifPlayback video header). Only the categories/
-// commands and bot name are ours — the message-building shape below is
-// intentionally left matching the reference script.
+// Native WhatsApp interactive menu.
+//
+// NOTE ON HISTORY: this previously sent a raw `carouselMessage` (swipeable
+// cards). Baileys has no first-class support for that field — it's
+// hand-built protobuf with no handling anywhere in the library's send
+// pipeline (grep `lib/Socket/messages-send.js`: only `nativeFlowMessage` /
+// `interactiveResponseMessage` are recognized). WhatsApp gates rendering of
+// that raw carousel shape per-account/client server-side, which is why the
+// "your version of WhatsApp doesn't support it" error persisted even with a
+// byte-for-byte copy of a working reference payload.
+//
+// This now sends a single `interactiveMessage` using the `single_select`
+// native-flow button — the same mechanism WhatsApp uses for its own "View
+// options" list menus. It is a real, currently-supported native flow (not a
+// carousel), and gives the closest equivalent UX: tap one button, get a
+// scrollable list of every category, tap a row to run its command.
 import axios from "axios";
 import {
   generateWAMessageFromContent,
@@ -29,6 +39,8 @@ export async function sendCarouselMenu(
     videoUrl?: string;
     sender: string;
     quoted?: WAMessage;
+    listButtonText?: string;
+    listTitle?: string;
   }
 ): Promise<boolean> {
   try {
@@ -50,42 +62,41 @@ export async function sendCarouselMenu(
       }
     }
 
-    const cards = opts.cards.map((cat) => {
-      let cardHeader = proto.Message.InteractiveMessage.Header.create({ title: " " });
+    const header = proto.Message.InteractiveMessage.Header.create(
+      media?.videoMessage
+        ? { title: " ", hasMediaAttachment: true, videoMessage: media.videoMessage }
+        : { title: " " }
+    );
 
-      if (media?.videoMessage) {
-        cardHeader = proto.Message.InteractiveMessage.Header.create({
-          title: " ",
-          hasMediaAttachment: true,
-          videoMessage: media.videoMessage,
-        });
-      }
+    const rows = opts.cards.map((card) => ({
+      header: "",
+      title: card.title,
+      description: card.description,
+      id: card.command,
+    }));
 
-      return {
-        body: proto.Message.InteractiveMessage.Body.create({
-          text: `*${cat.title}*\n${cat.description}\n\n| © ZYNTRIX`,
-        }),
-        header: cardHeader,
-        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
-          buttons: [
-            {
-              name: "quick_reply",
-              buttonParamsJson: JSON.stringify({
-                display_text: cat.buttonText,
-                id: cat.command,
-              }),
-            },
-          ],
-        }),
-      };
+    const nativeFlowMessage = proto.Message.InteractiveMessage.NativeFlowMessage.create({
+      buttons: [
+        {
+          name: "single_select",
+          buttonParamsJson: JSON.stringify({
+            title: opts.listButtonText ?? "📚 View Categories",
+            sections: [
+              {
+                title: opts.listTitle ?? "Command Categories",
+                rows,
+              },
+            ],
+          }),
+        },
+      ],
     });
 
     const interactiveMessage = proto.Message.InteractiveMessage.create({
+      header,
       body: proto.Message.InteractiveMessage.Body.create({ text: opts.bodyText }),
-      carouselMessage: proto.Message.InteractiveMessage.CarouselMessage.create({
-        cards: cards as any,
-        messageVersion: 1,
-      }),
+      nativeFlowMessage,
+      contextInfo: proto.ContextInfo.create({ mentionedJid: [opts.sender] }),
     });
 
     // fkontak — fake "WhatsApp Business" contact card used as the quoted
@@ -117,7 +128,7 @@ export async function sendCarouselMenu(
           },
         },
       } as any,
-      { quoted: opts.quoted ?? fakeQuoted, mentions: [opts.sender] } as any
+      { quoted: opts.quoted ?? fakeQuoted } as any
     );
 
     await sock.relayMessage(jid, msg.message!, { messageId: msg.key.id! });
