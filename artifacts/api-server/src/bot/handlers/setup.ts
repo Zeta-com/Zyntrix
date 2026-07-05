@@ -13,7 +13,7 @@ import { cacheMessage, handleDeletedMessage } from "./messageDelete.js";
 import { handleViewOnce, handleVVCommand, handleVV2Command } from "./viewOnce.js";
 import { handleStatusGrab } from "./status.js";
 import { cacheStatusUpdate } from "./statusStore.js";
-import { handleCommand, getMessageText, getJid } from "./commands.js";
+import { handleCommand, getMessageText, getButtonCommand, getJid } from "./commands.js";
 import { fetchMetaAI } from "./ai.js";
 import { hasActiveTrivia, checkTriviaAnswer } from "../games/trivia.js";
 import { hasActiveMath, checkMathAnswer } from "../games/math.js";
@@ -68,7 +68,11 @@ export function attachBotHandlers(sock: WASocket): void {
     for (const msg of messages) {
       if (!msg.message) continue;
 
-      const text = getMessageText(msg);
+      // A tapped native-flow button (e.g. a carousel card) produces an
+      // interactiveResponseMessage, not plain text — resolve its `id` first
+      // so button taps route through the same command handler as typed text.
+      const buttonCommand = getButtonCommand(msg);
+      const text = buttonCommand ?? getMessageText(msg);
       const chatJid = getJid(msg);
       const sender = msg.key.participant ?? msg.key.remoteJid ?? "";
       const isFromMe = msg.key.fromMe === true;

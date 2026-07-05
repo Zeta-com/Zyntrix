@@ -47,6 +47,15 @@ export async function sendCTA(
         serverMessageId: -1,
         newsletterName: botName,
       }),
+    // Small preview thumbnail shown alongside the "View channel" card.
+    externalAdReply: proto.ContextInfo.ExternalAdReplyInfo.create({
+      title: botName,
+      body: opts?.buttonText ?? "View Channel",
+      thumbnailUrl: BOT_CONFIG.thumbnailUrl,
+      mediaType: proto.ContextInfo.ExternalAdReplyInfo.MediaType.IMAGE,
+      renderLargerThumbnail: false,
+      showAdAttribution: false,
+    }),
     participant: "0@s.whatsapp.net",
     remoteJid: "status@broadcast",
     stanzaId: `FKONTAK-${Date.now()}`,

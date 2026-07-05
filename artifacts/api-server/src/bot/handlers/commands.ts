@@ -85,6 +85,26 @@ export function getMessageText(msg: WAMessage): string {
   );
 }
 
+// Tapping a native-flow button (e.g. a carousel card's quick_reply button)
+// doesn't produce a plain text message — it produces an
+// `interactiveResponseMessage` whose `nativeFlowResponseMessage.paramsJson`
+// echoes back the JSON we sent in the button (`{ display_text, id }`). The
+// normal command router only ever looked at `conversation`/`extendedTextMessage`,
+// so button taps were silently ignored — no error, no reply, nothing. This
+// pulls the `id` (already prefix-qualified, e.g. ".listfun") back out so it
+// can be routed through the same command handler as a typed command.
+export function getButtonCommand(msg: WAMessage): string | null {
+  const paramsJson = (msg.message as any)?.interactiveResponseMessage
+    ?.nativeFlowResponseMessage?.paramsJson;
+  if (!paramsJson || typeof paramsJson !== "string") return null;
+  try {
+    const parsed = JSON.parse(paramsJson);
+    return typeof parsed?.id === "string" ? parsed.id : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Dynamic menu builder ──────────────────────────────────────────────────────
 const MENU_IMAGE_URL = "https://i.postimg.cc/T1nBJN9L/f8a339cefd71e77ac0aacdb64ef1ed8e.jpg";
 

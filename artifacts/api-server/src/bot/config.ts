@@ -6,6 +6,7 @@ export const BOT_CONFIG = {
   // Newsletter channel JID: 120363424876568536@newsletter
   channelUrl: "https://whatsapp.com/channel/120363424876568536",
   channelJid: "120363424876568536@newsletter",
+  thumbnailUrl: "https://i.postimg.cc/T1nBJN9L/f8a339cefd71e77ac0aacdb64ef1ed8e.jpg",
 };
 
 export let isPublicMode = true;
