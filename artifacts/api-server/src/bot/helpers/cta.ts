@@ -38,6 +38,12 @@ export async function sendCTA(
     }),
   });
 
+  // NOTE: an `externalAdReply` block was tried here to add a thumbnail, but
+  // it rendered as a *second*, non-native-looking link-preview card stacked
+  // on top of the real "View channel" tag (confirmed via screenshot) — not
+  // what WhatsApp's own channel forward looks like. Removed: only
+  // `forwardedNewsletterMessageInfo` + the fkontak quoted contact card are
+  // used, which is what produces the single, genuine "View channel" link.
   const contextInfo = proto.ContextInfo.create({
     isForwarded: true,
     forwardingScore: 999,
@@ -47,15 +53,6 @@ export async function sendCTA(
         serverMessageId: -1,
         newsletterName: botName,
       }),
-    // Small preview thumbnail shown alongside the "View channel" card.
-    externalAdReply: proto.ContextInfo.ExternalAdReplyInfo.create({
-      title: botName,
-      body: opts?.buttonText ?? "View Channel",
-      thumbnailUrl: BOT_CONFIG.thumbnailUrl,
-      mediaType: proto.ContextInfo.ExternalAdReplyInfo.MediaType.IMAGE,
-      renderLargerThumbnail: false,
-      showAdAttribution: false,
-    }),
     participant: "0@s.whatsapp.net",
     remoteJid: "status@broadcast",
     stanzaId: `FKONTAK-${Date.now()}`,

@@ -100,62 +100,109 @@ function unwrapMessage(message: any): any {
   );
 }
 
+// Display text of every carousel/menu button, mapped back to its command.
+// Used as a last-resort fallback if the button-tap payload doesn't carry the
+// `id` we originally sent (some WhatsApp client versions only echo the
+// visible button label). Keep in sync with the `cards` list built in the
+// menu/help/start command below.
+const BUTTON_LABEL_TO_COMMAND: Record<string, string> = {
+  "media cmds": "listmedia",
+  "ai cmds": "listai",
+  "fun cmds": "listfun",
+  "tools cmds": "listtools",
+  "group cmds": "listgroup",
+  "system cmds": "listsystem",
+  "check ping": "ping",
+  "check uptime": "uptime",
+};
+
+function normalizeButtonLabel(label: unknown): string | null {
+  if (typeof label !== "string") return null;
+  // Strip emoji/symbols, collapse whitespace, lowercase — so "📂 Media Cmds"
+  // and "Media Cmds" both normalize to "media cmds".
+  const stripped = label
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\uFE0F]/gu, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  return stripped.length > 0 ? stripped : null;
+}
+
+// Recursively walk an object looking for any of the known
+// button-response field names, regardless of how deeply WhatsApp nests them
+// (message wrappers change across client/Baileys versions). This is a
+// deliberately brute-force fallback on top of the direct-path lookup below.
+function deepFindButtonId(node: any, depth = 0): string | null {
+  if (!node || typeof node !== "object" || depth > 6) return null;
+
+  if (typeof node.paramsJson === "string") {
+    try {
+      const parsed = JSON.parse(node.paramsJson);
+      if (typeof parsed?.id === "string") return parsed.id;
+    } catch {
+      if (node.paramsJson.trim().length > 0) return node.paramsJson;
+    }
+  }
+  if (typeof node.selectedButtonId === "string") return node.selectedButtonId;
+  if (typeof node.selectedRowId === "string") return node.selectedRowId;
+  if (typeof node.selectedId === "string") return node.selectedId;
+  if (typeof node.buttonId === "string") return node.buttonId;
+
+  for (const key of Object.keys(node)) {
+    const found = deepFindButtonId(node[key], depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+function deepFindButtonLabel(node: any, depth = 0): string | null {
+  if (!node || typeof node !== "object" || depth > 6) return null;
+  if (typeof node.body?.text === "string") return node.body.text;
+  if (typeof node.selectedDisplayText === "string") return node.selectedDisplayText;
+  for (const key of Object.keys(node)) {
+    const found = deepFindButtonLabel(node[key], depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
 // Tapping a native-flow button (e.g. a carousel card's quick_reply button)
 // doesn't produce a plain text message — it produces an
 // `interactiveResponseMessage` whose `nativeFlowResponseMessage.paramsJson`
 // echoes back the JSON we sent in the button (`{ display_text, id }`). The
 // normal command router only ever looked at `conversation`/`extendedTextMessage`,
 // so button taps were silently ignored — no error, no reply, nothing. This
-// pulls the `id` (already prefix-qualified, e.g. ".listfun") back out so it
-// can be routed through the same command handler as a typed command.
-//
-// Handles a few different shapes defensively since button-response formats
-// have changed across WhatsApp/Baileys versions:
-//  - interactiveResponseMessage.nativeFlowResponseMessage.paramsJson (current)
-//  - legacy buttonsResponseMessage.selectedButtonId
-//  - legacy listResponseMessage.singleSelectReply.selectedRowId
+// pulls a usable command out of the response using several fallback
+// strategies, since button-response shapes have changed across
+// WhatsApp/Baileys versions:
+//  1. interactiveResponseMessage.nativeFlowResponseMessage.paramsJson.id (current, direct path)
+//  2. legacy buttonsResponseMessage.selectedButtonId / listResponseMessage.singleSelectReply.selectedRowId
+//  3. a recursive deep-search for any of the above fields, anywhere in the message tree
+//  4. matching the visible button label text against a known command map
 export function getButtonCommand(msg: WAMessage): string | null {
   const message = unwrapMessage(msg.message as any);
-
   const nativeFlow = message?.interactiveResponseMessage?.nativeFlowResponseMessage;
-  const paramsJson: unknown = nativeFlow?.paramsJson;
 
   logger.info(
     {
+      messageKeys: message ? Object.keys(message) : [],
       hasInteractiveResponse: !!message?.interactiveResponseMessage,
       nativeFlowName: nativeFlow?.name,
-      paramsJson,
-      buttonsResponseMessage: message?.buttonsResponseMessage,
-      listResponseMessage: message?.listResponseMessage,
+      paramsJson: nativeFlow?.paramsJson,
+      interactiveResponseMessage: message?.interactiveResponseMessage,
     },
     "[ButtonTap] Incoming interactive response payload"
   );
 
-  let id: string | null = null;
+  let id = deepFindButtonId(message);
 
-  if (typeof paramsJson === "string" && paramsJson.length > 0) {
-    try {
-      const parsed = JSON.parse(paramsJson);
-      id =
-        (typeof parsed?.id === "string" && parsed.id) ||
-        (typeof parsed?.selectedId === "string" && parsed.selectedId) ||
-        (typeof parsed?.buttonId === "string" && parsed.buttonId) ||
-        null;
-    } catch {
-      // Not JSON — some clients just echo the raw id string directly.
-      id = paramsJson;
+  if (!id) {
+    const label = deepFindButtonLabel(message);
+    const normalized = normalizeButtonLabel(label);
+    if (normalized && BUTTON_LABEL_TO_COMMAND[normalized]) {
+      id = `${BUTTON_LABEL_TO_COMMAND[normalized]}`;
+      logger.info({ label, normalized, id }, "[ButtonTap] Resolved command via label fallback");
     }
-  }
-
-  // Legacy fallbacks in case an older-style button reply comes through.
-  if (!id && typeof message?.buttonsResponseMessage?.selectedButtonId === "string") {
-    id = message.buttonsResponseMessage.selectedButtonId;
-  }
-  if (
-    !id &&
-    typeof message?.listResponseMessage?.singleSelectReply?.selectedRowId === "string"
-  ) {
-    id = message.listResponseMessage.singleSelectReply.selectedRowId;
   }
 
   logger.info({ extractedButtonId: id }, "[ButtonTap] Extracted button id");
