@@ -67,129 +67,143 @@ export function attachBotHandlers(sock: WASocket): void {
     if (type !== "notify" && type !== "append") return;
 
     for (const msg of messages) {
-      if (!msg.message) continue;
+      try {
+        if (!msg.message) continue;
 
-      // A tapped native-flow button (e.g. a carousel card) produces an
-      // interactiveResponseMessage, not plain text — resolve its `id` first
-      // so button taps route through the same command handler as typed text.
-      const buttonCommand = getButtonCommand(msg);
-      const text = buttonCommand ?? getMessageText(msg);
-      const chatJid = getJid(msg);
-      const sender = msg.key.participant ?? msg.key.remoteJid ?? "";
-      const isFromMe = msg.key.fromMe === true;
-      const isGroup = chatJid.endsWith("@g.us");
+        // A tapped native-flow button (e.g. a carousel card) produces an
+        // interactiveResponseMessage, not plain text — resolve its `id` first
+        // so button taps route through the same command handler as typed text.
+        const buttonCommand = getButtonCommand(msg);
+        const text = buttonCommand ?? getMessageText(msg);
+        const chatJid = getJid(msg);
+        const sender = msg.key.participant ?? msg.key.remoteJid ?? "";
+        const isFromMe = msg.key.fromMe === true;
+        const isGroup = chatJid.endsWith("@g.us");
 
-      if (buttonCommand) {
-        logger.info(
-          { buttonCommand, chatJid, isGroup, isFromMe },
-          "[ButtonTap] Resolved command from button tap"
-        );
-      }
+        if (buttonCommand) {
+          logger.info(
+            { buttonCommand, chatJid, isGroup, isFromMe },
+            "[ButtonTap] Resolved command from button tap"
+          );
+        }
 
-      // ── Status broadcast — cache so `.grabstatus` can forward it later ────
-      if (chatJid === "status@broadcast") {
-        if (!isFromMe) cacheStatusUpdate(msg);
-        continue;
-      }
+        // ── Status broadcast — cache so `.grabstatus` can forward it later ──
+        if (chatJid === "status@broadcast") {
+          if (!isFromMe) cacheStatusUpdate(msg);
+          continue;
+        }
 
-      // Cache ALL messages (including fromMe) so group admins deleting
-      // the bot owner's messages are also caught by antidelete
-      cacheMessage(msg);
+        // Cache ALL messages (including fromMe) so group admins deleting
+        // the bot owner's messages are also caught by antidelete
+        cacheMessage(msg);
 
-      if (!isFromMe && (fakeTypeMode || fakeRecordMode)) {
-        sock.sendPresenceUpdate(
-          fakeRecordMode ? "recording" : ("composing" as any),
-          chatJid
-        ).catch(() => {});
-      }
+        if (!isFromMe && (fakeTypeMode || fakeRecordMode)) {
+          sock.sendPresenceUpdate(
+            fakeRecordMode ? "recording" : ("composing" as any),
+            chatJid
+          ).catch(() => {});
+        }
 
-      // ── Owner sending commands from their own phone ──────────────────────
-      if (isFromMe) {
-        if (text && text.startsWith(BOT_CONFIG.prefix)) {
+        // ── Owner sending commands from their own phone ────────────────────
+        if (isFromMe) {
+          if (text && text.startsWith(BOT_CONFIG.prefix)) {
+            const commandText = text.slice(BOT_CONFIG.prefix.length);
+            const cmd = commandText.split(/\s+/)[0]?.toLowerCase() ?? "";
+            if (cmd === "status") {
+              await handleStatusGrab(sock, msg, commandText.split(/\s+/)[1]);
+            } else if (cmd === "vv") {
+              await handleVVCommand(sock, msg);
+            } else if (cmd === "vv2") {
+              await handleVV2Command(sock, msg);
+            } else {
+              if (buttonCommand) {
+                logger.info({ commandText }, "[ButtonTap] Dispatching to handleCommand (fromMe)");
+              }
+              await handleCommand(sock, msg, commandText);
+              if (buttonCommand) {
+                logger.info({ commandText }, "[ButtonTap] handleCommand completed (fromMe)");
+              }
+            }
+          } else if (buttonCommand) {
+            logger.warn(
+              { buttonCommand, text },
+              "[ButtonTap] Resolved a button command but it doesn't start with the configured prefix — check BOT_CONFIG.prefix"
+            );
+          }
+          continue;
+        }
+
+        // ── View-once spy ────────────────────────────────────────────────
+        const hasViewOnce =
+          !!msg.message.viewOnceMessage ||
+          !!msg.message.viewOnceMessageV2 ||
+          !!msg.message.viewOnceMessageV2Extension;
+        if (hasViewOnce) await handleViewOnce(sock, msg);
+
+        if (!text) continue;
+
+        // ── Commands ───────────────────────────────────────────────────────
+        if (text.startsWith(BOT_CONFIG.prefix)) {
           const commandText = text.slice(BOT_CONFIG.prefix.length);
           const cmd = commandText.split(/\s+/)[0]?.toLowerCase() ?? "";
+
+          if (cmd === "vv") {
+            await handleVVCommand(sock, msg);
+            continue;
+          }
+          if (cmd === "vv2") {
+            await handleVV2Command(sock, msg);
+            continue;
+          }
           if (cmd === "status") {
             await handleStatusGrab(sock, msg, commandText.split(/\s+/)[1]);
-          } else if (cmd === "vv") {
-            await handleVVCommand(sock, msg);
-          } else if (cmd === "vv2") {
-            await handleVV2Command(sock, msg);
           } else {
             if (buttonCommand) {
-              logger.info({ commandText }, "[ButtonTap] Dispatching to handleCommand (fromMe)");
+              logger.info({ commandText, isGroup }, "[ButtonTap] Dispatching to handleCommand");
             }
             await handleCommand(sock, msg, commandText);
             if (buttonCommand) {
-              logger.info({ commandText }, "[ButtonTap] handleCommand completed (fromMe)");
+              logger.info({ commandText, isGroup }, "[ButtonTap] handleCommand completed");
             }
           }
-        }
-        continue;
-      }
-
-      // ── View-once spy ────────────────────────────────────────────────────
-      const hasViewOnce =
-        !!msg.message.viewOnceMessage ||
-        !!msg.message.viewOnceMessageV2 ||
-        !!msg.message.viewOnceMessageV2Extension;
-      if (hasViewOnce) await handleViewOnce(sock, msg);
-
-      if (!text) continue;
-
-      // ── Commands ─────────────────────────────────────────────────────────
-      if (text.startsWith(BOT_CONFIG.prefix)) {
-        const commandText = text.slice(BOT_CONFIG.prefix.length);
-        const cmd = commandText.split(/\s+/)[0]?.toLowerCase() ?? "";
-
-        if (cmd === "vv") {
-          await handleVVCommand(sock, msg);
           continue;
         }
-        if (cmd === "vv2") {
-          await handleVV2Command(sock, msg);
-          continue;
-        }
-        if (cmd === "status") {
-          await handleStatusGrab(sock, msg, commandText.split(/\s+/)[1]);
-        } else {
-          if (buttonCommand) {
-            logger.info({ commandText, isGroup }, "[ButtonTap] Dispatching to handleCommand");
-          }
-          await handleCommand(sock, msg, commandText);
-          if (buttonCommand) {
-            logger.info({ commandText, isGroup }, "[ButtonTap] handleCommand completed");
+
+        // ── Games ──────────────────────────────────────────────────────────
+        if (hasActiveTrivia(chatJid)) {
+          const result = checkTriviaAnswer(chatJid, text);
+          if (result) {
+            await sock.sendMessage(chatJid, { text: result }, { quoted: msg });
+            continue;
           }
         }
-        continue;
-      }
 
-      // ── Games ────────────────────────────────────────────────────────────
-      if (hasActiveTrivia(chatJid)) {
-        const result = checkTriviaAnswer(chatJid, text);
-        if (result) {
-          await sock.sendMessage(chatJid, { text: result }, { quoted: msg });
-          continue;
+        if (hasActiveMath(chatJid)) {
+          const result = checkMathAnswer(chatJid, text);
+          if (result) {
+            await sock.sendMessage(chatJid, { text: result }, { quoted: msg });
+            continue;
+          }
         }
-      }
 
-      if (hasActiveMath(chatJid)) {
-        const result = checkMathAnswer(chatJid, text);
-        if (result) {
-          await sock.sendMessage(chatJid, { text: result }, { quoted: msg });
-          continue;
+        // ── Chatbot (AI auto-reply) ──────────────────────────────────────
+        // Replies quote the sender's message instead of @mentioning them —
+        // a reply already makes the context clear without an unnecessary tag.
+        if (isChatbotOn(chatJid)) {
+          try {
+            const aiResponse = await fetchMetaAI(text);
+            await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
+          } catch (err: any) {
+            logger.error({ err: err?.message ?? err }, "[Chatbot] Failed to send reply");
+          }
         }
-      }
-
-      // ── Chatbot (AI auto-reply) ───────────────────────────────────────────
-      // Replies quote the sender's message instead of @mentioning them —
-      // a reply already makes the context clear without an unnecessary tag.
-      if (isChatbotOn(chatJid)) {
-        try {
-          const aiResponse = await fetchMetaAI(text);
-          await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
-        } catch (err: any) {
-          console.error("[Chatbot] Failed to send reply:", err?.message ?? err);
-        }
+      } catch (err: any) {
+        // Never let one bad message silently kill processing of the rest of
+        // the batch, and never let an error disappear without a trace.
+        logger.error(
+          { err: err?.stack ?? err?.message ?? err, key: msg.key },
+          "[MessageHandler] Uncaught error while processing an incoming message"
+        );
       }
     }
   });
