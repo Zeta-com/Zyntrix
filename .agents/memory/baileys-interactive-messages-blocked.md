@@ -1,21 +1,33 @@
 ---
-name: Baileys interactive/carousel messages get blocked on real WhatsApp accounts
-description: WhatsApp actively rejects or silently drops unofficial nativeFlow/carousel interactive messages sent from Baileys-based clients; do not keep iterating on payload shape.
+name: Baileys carouselMessage must nest inside interactiveMessage, not top-level
+description: How to correctly construct a real WhatsApp carousel (swipeable cards) message with Baileys — carouselMessage is a oneof variant nested inside interactiveMessage, not a top-level message field.
 ---
 
-## What happened
+## The actual root cause (confirmed by reading WAProto.proto)
 
-Two structurally different interactive message shapes were sent via Baileys (a `carouselMessage` protobuf field, then a `nativeFlowMessage` `single_select` list button) to a real WhatsApp account for a bot `.menu` command. Both failed, but in different ways:
+`carouselMessage` is NOT a top-level `Message` field. In the protobuf schema (`WAProto/WAProto.proto`), it is one of the `oneof interactiveMessage` variants defined *inside* `Message.InteractiveMessage`, as a sibling of `nativeFlowMessage`:
 
-- `carouselMessage`: WhatsApp showed a visible "your WhatsApp doesn't support it" placeholder. Root cause: this raw/unofficial protobuf field has zero handling in Baileys' own send pipeline (`lib/Socket/messages-send.js` only recognizes `nativeFlowMessage`/`interactiveResponseMessage`), so it's inherently unsupported.
-- `nativeFlowMessage` (`single_select`): no visible error at all — the message was silently dropped with zero rendering on the recipient device, even though the send call itself completed without throwing (`relayMessage` did not reject).
+```
+message InteractiveMessage {
+  optional Header header = 1;
+  optional Body body = 2;
+  optional Footer footer = 3;
+  oneof interactiveMessage {
+    ...
+    NativeFlowMessage nativeFlowMessage = 6;
+    CarouselMessage carouselMessage = 7;
+  }
+  message CarouselMessage {
+    repeated Message.InteractiveMessage cards = 1;  // each card is a full InteractiveMessage
+    optional CarouselCardType carouselCardType = 3; // HSCROLL_CARDS = 1
+  }
+}
+```
 
-## Why this matters
-
-This is not a payload-shape bug you can keep patching. It's WhatsApp's server-side/client-side gating of unofficial interactive message types from non-official clients — one generation of WA client shows a rejection placeholder, a newer one just discards the message silently. Continuing to try new interactive/native-flow shapes on a real account is unlikely to succeed and wastes cycles.
+Sending `{ carouselMessage: {...} }` as a top-level message content field is silently unrecognized by Baileys' send pipeline (only top-level `nativeFlowMessage`/`interactiveResponseMessage`-style fields are handled there) — this produces either a visible "your WhatsApp doesn't support it" placeholder or a fully silent drop with zero rendering and no error, depending on WA client version. The fix is to wrap it correctly: a top-level `interactiveMessage` whose `carouselMessage` field holds the `cards` array, where each card is itself a complete `InteractiveMessage` (own header image + body text + its own `nativeFlowMessage` button, e.g. `quick_reply`).
 
 ## How to apply
 
-- Default any menu/interactive UI in a Baileys bot to plain text (+ optional image) messages — these are guaranteed to render.
-- If experimenting with interactive/native-flow/carousel messages, gate them behind an explicit opt-in (e.g. an env var like `MENU_STYLE=interactive`) with a fallback to plain text if the send doesn't clearly succeed, so a failed experiment never silently breaks a core command.
-- Don't diagnose "no response at all" bugs in this class of message as a code exception first — check whether the send call actually resolved successfully (no throw) but WhatsApp discarded the render. Absence of both a success message AND an error/fallback message is a strong signal of this silent-drop behavior, not an unhandled exception.
+- Before assuming a WhatsApp/Baileys interactive message type is "blocked" or "unsupported," check the installed Baileys version's `WAProto/WAProto.proto` for the field's actual nesting — unofficial/reverse-engineered message types are easy to place at the wrong protobuf level.
+- Correct carousel shape: `generateWAMessageFromContent(jid, { interactiveMessage: { body, footer, carouselMessage: { cards: InteractiveMessage[], carouselCardType } } }, opts)`.
+- A "no response at all" symptom (no success, no error, no fallback) for a custom interactive message usually means the send call resolved without throwing but WhatsApp discarded the render — check whether the payload is nested at the correct protobuf level before assuming it's a permanent WhatsApp-side block.

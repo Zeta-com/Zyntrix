@@ -1,3 +1,3 @@
 # Memory Index
 
-- [Baileys interactive/carousel messages get blocked](baileys-interactive-messages-blocked.md) — WhatsApp rejects/silently drops unofficial nativeFlow & carousel messages from Baileys clients; default to plain text+image, gate experiments behind an env flag.
+- [Baileys carouselMessage nesting](baileys-interactive-messages-blocked.md) — carouselMessage must nest inside interactiveMessage (a oneof sibling of nativeFlowMessage), not sent top-level, or it silently fails to render.

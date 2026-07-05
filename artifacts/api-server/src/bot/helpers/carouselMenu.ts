@@ -1,19 +1,16 @@
-// Native WhatsApp interactive menu.
+// Native WhatsApp carousel menu.
 //
-// NOTE ON HISTORY: this previously sent a raw `carouselMessage` (swipeable
-// cards). Baileys has no first-class support for that field — it's
-// hand-built protobuf with no handling anywhere in the library's send
-// pipeline (grep `lib/Socket/messages-send.js`: only `nativeFlowMessage` /
-// `interactiveResponseMessage` are recognized). WhatsApp gates rendering of
-// that raw carousel shape per-account/client server-side, which is why the
-// "your version of WhatsApp doesn't support it" error persisted even with a
-// byte-for-byte copy of a working reference payload.
-//
-// This now sends a single `interactiveMessage` using the `single_select`
-// native-flow button — the same mechanism WhatsApp uses for its own "View
-// options" list menus. It is a real, currently-supported native flow (not a
-// carousel), and gives the closest equivalent UX: tap one button, get a
-// scrollable list of every category, tap a row to run its command.
+// NOTE ON HISTORY: earlier attempts sent `carouselMessage` as a *top-level*
+// message field, which Baileys' send pipeline never recognizes (only
+// `nativeFlowMessage` / `interactiveResponseMessage` are handled at the top
+// level) — hence the "your WhatsApp doesn't support it" error. Checking the
+// actual WAProto.proto shows `carouselMessage` is not a top-level field at
+// all: it's one of the `oneof interactiveMessage` variants nested *inside*
+// `Message.InteractiveMessage` (WAProto.proto ~line 2685), alongside
+// `nativeFlowMessage`. Each card in `CarouselMessage.cards` is itself a full
+// `Message.InteractiveMessage` (its own header image + body + buttons).
+// Wrapping it this way — a top-level `interactiveMessage` whose
+// `carouselMessage` field holds the cards — is the correct, supported shape.
 import axios from "axios";
 import {
   generateWAMessageFromContent,
@@ -36,66 +33,65 @@ export async function sendCarouselMenu(
   opts: {
     bodyText: string;
     cards: MenuCard[];
-    videoUrl?: string;
+    imageUrl?: string;
+    footerText?: string;
     sender: string;
     quoted?: WAMessage;
-    listButtonText?: string;
-    listTitle?: string;
   }
 ): Promise<boolean> {
   try {
-    let media: Awaited<ReturnType<typeof prepareWAMessageMedia>> | null = null;
+    let sharedMedia: Awaited<ReturnType<typeof prepareWAMessageMedia>> | null = null;
 
-    if (opts.videoUrl) {
+    if (opts.imageUrl) {
       try {
-        const { data: gifBuffer } = await axios.get<ArrayBuffer>(opts.videoUrl, {
+        const { data } = await axios.get<ArrayBuffer>(opts.imageUrl, {
           responseType: "arraybuffer",
           timeout: 8000,
         });
-
-        media = await prepareWAMessageMedia(
-          { video: Buffer.from(gifBuffer), gifPlayback: true },
+        sharedMedia = await prepareWAMessageMedia(
+          { image: Buffer.from(data) },
           { upload: sock.waUploadToServer }
         );
       } catch {
-        console.log("[MENU WARNING] Failed to load the GIF. Rendering menu without it.");
+        console.log("[MENU WARNING] Failed to load card image. Rendering carousel without it.");
       }
     }
 
-    const header = proto.Message.InteractiveMessage.Header.create(
-      media?.videoMessage
-        ? { title: " ", hasMediaAttachment: true, videoMessage: media.videoMessage }
-        : { title: " " }
+    const cards = opts.cards.map((card) =>
+      proto.Message.InteractiveMessage.create({
+        header: proto.Message.InteractiveMessage.Header.create(
+          sharedMedia?.imageMessage
+            ? { title: card.title, hasMediaAttachment: true, imageMessage: sharedMedia.imageMessage }
+            : { title: card.title }
+        ),
+        body: proto.Message.InteractiveMessage.Body.create({ text: card.description }),
+        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+          buttons: [
+            {
+              name: "quick_reply",
+              buttonParamsJson: JSON.stringify({
+                display_text: card.buttonText,
+                id: card.command,
+              }),
+            },
+          ],
+        }),
+      })
     );
 
-    const rows = opts.cards.map((card) => ({
-      header: "",
-      title: card.title,
-      description: card.description,
-      id: card.command,
-    }));
-
-    const nativeFlowMessage = proto.Message.InteractiveMessage.NativeFlowMessage.create({
-      buttons: [
-        {
-          name: "single_select",
-          buttonParamsJson: JSON.stringify({
-            title: opts.listButtonText ?? "📚 View Categories",
-            sections: [
-              {
-                title: opts.listTitle ?? "Command Categories",
-                rows,
-              },
-            ],
-          }),
-        },
-      ],
+    const carouselMessage = proto.Message.InteractiveMessage.CarouselMessage.create({
+      cards,
+      carouselCardType:
+        proto.Message.InteractiveMessage.CarouselMessage.CarouselCardType.HSCROLL_CARDS,
+      messageVersion: 1,
     });
 
     const interactiveMessage = proto.Message.InteractiveMessage.create({
-      header,
       body: proto.Message.InteractiveMessage.Body.create({ text: opts.bodyText }),
-      nativeFlowMessage,
+      footer: opts.footerText
+        ? proto.Message.InteractiveMessage.Footer.create({ text: opts.footerText })
+        : undefined,
+      carouselMessage,
       contextInfo: proto.ContextInfo.create({ mentionedJid: [opts.sender] }),
     });
 
