@@ -231,35 +231,45 @@ export async function handleCommand(
       case "menu":
       case "help":
       case "start": {
-        const p = config.BOT_CONFIG.prefix;
-        const sender = getSender(msg);
-        const cards: MenuCard[] = [
-          { title: "🎵 MEDIA TOOLS", description: "Download YouTube, TikTok, Instagram & movies.", buttonText: "📂 Media Cmds", command: `${p}listmedia` },
-          { title: "🧠 AI FEATURES", description: "Chat, image generation & cinematic transforms.", buttonText: "🤖 AI Cmds", command: `${p}listai` },
-          { title: "🎮 FUN & GAMES", description: "Trivia, truth or dare, RPS, math & more.", buttonText: "🎲 Fun Cmds", command: `${p}listfun` },
-          { title: "🛠️ UTILITIES", description: "Weather, translate, QR codes, calculators & more.", buttonText: "⚙️ Tools Cmds", command: `${p}listtools` },
-          { title: "👥 GROUP & ADMIN", description: "Tag all, admins, invite links & moderation.", buttonText: "🛡️ Group Cmds", command: `${p}listgroup` },
-          { title: "⚙️ SYSTEM & OWNER", description: "Bot status, owner tools & configuration.", buttonText: "👑 System Cmds", command: `${p}listsystem` },
-          { title: "🏓 BOT PING", description: "Check the bot's response speed and latency.", buttonText: "⚡ Check Ping", command: `${p}ping` },
-          { title: "⏱️ BOT UPTIME", description: "See how long the bot has been running.", buttonText: "⏳ Check Uptime", command: `${p}uptime` },
-        ];
+        // Text+image menu is the reliable default — two different native
+        // interactive/carousel message shapes were tested on a real device
+        // and both failed (one with a visible "not supported" error, one
+        // with a silent drop and zero rendering). That's WhatsApp actively
+        // rejecting/discarding unofficial interactive payloads from Baileys
+        // clients, not a payload bug we can patch our way out of. Set
+        // MENU_STYLE=interactive to opt back into the experimental list-flow
+        // menu if you want to keep testing it on newer WhatsApp builds.
+        if (process.env.MENU_STYLE === "interactive") {
+          const p = config.BOT_CONFIG.prefix;
+          const sender = getSender(msg);
+          const cards: MenuCard[] = [
+            { title: "🎵 MEDIA TOOLS", description: "Download YouTube, TikTok, Instagram & movies.", buttonText: "📂 Media Cmds", command: `${p}listmedia` },
+            { title: "🧠 AI FEATURES", description: "Chat, image generation & cinematic transforms.", buttonText: "🤖 AI Cmds", command: `${p}listai` },
+            { title: "🎮 FUN & GAMES", description: "Trivia, truth or dare, RPS, math & more.", buttonText: "🎲 Fun Cmds", command: `${p}listfun` },
+            { title: "🛠️ UTILITIES", description: "Weather, translate, QR codes, calculators & more.", buttonText: "⚙️ Tools Cmds", command: `${p}listtools` },
+            { title: "👥 GROUP & ADMIN", description: "Tag all, admins, invite links & moderation.", buttonText: "🛡️ Group Cmds", command: `${p}listgroup` },
+            { title: "⚙️ SYSTEM & OWNER", description: "Bot status, owner tools & configuration.", buttonText: "👑 System Cmds", command: `${p}listsystem` },
+            { title: "🏓 BOT PING", description: "Check the bot's response speed and latency.", buttonText: "⚡ Check Ping", command: `${p}ping` },
+            { title: "⏱️ BOT UPTIME", description: "See how long the bot has been running.", buttonText: "⏳ Check Uptime", command: `${p}uptime` },
+          ];
 
-        const sent = await sendCarouselMenu(sock, jid, {
-          bodyText: `> © ${config.BOT_CONFIG.botName}\n┏ ◆ MOOD: 🧪\n┗ ◆ ${config.BOT_CONFIG.botName} Bot\n\n👋 Hey *@${sender.split("@")[0]}*\nTap below to browse all command categories! 📚`,
-          cards,
-          sender,
-          quoted: msg,
-          listButtonText: "📚 View Categories",
-          listTitle: `${config.BOT_CONFIG.botName} Commands`,
-        });
+          const sent = await sendCarouselMenu(sock, jid, {
+            bodyText: `> © ${config.BOT_CONFIG.botName}\n┏ ◆ MOOD: 🧪\n┗ ◆ ${config.BOT_CONFIG.botName} Bot\n\n👋 Hey *@${sender.split("@")[0]}*\nTap below to browse all command categories! 📚`,
+            cards,
+            sender,
+            quoted: msg,
+            listButtonText: "📚 View Categories",
+            listTitle: `${config.BOT_CONFIG.botName} Commands`,
+          });
 
-        if (!sent) {
-          // Fallback for clients that reject the interactive carousel
-          await sock.sendMessage(jid, {
-            image: { url: MENU_IMAGE_URL },
-            caption: buildMenu(senderName, jid),
-          } as any, { quoted: msg });
+          if (sent) break;
+          // fall through to the text+image menu below if the send failed
         }
+
+        await sock.sendMessage(jid, {
+          image: { url: MENU_IMAGE_URL },
+          caption: buildMenu(senderName, jid),
+        } as any, { quoted: msg });
         break;
       }
 
