@@ -18,6 +18,7 @@ import { fetchMetaAI } from "./ai.js";
 import { hasActiveTrivia, checkTriviaAnswer } from "../games/trivia.js";
 import { hasActiveMath, checkMathAnswer } from "../games/math.js";
 import { sendCTA } from "../helpers/cta.js";
+import { logger } from "../../lib/logger.js";
 
 // ── CTA patch: text-only messages get the native "View channel" style ─────────
 export function patchSockForCTA(sock: WASocket): WASocket {
@@ -78,6 +79,13 @@ export function attachBotHandlers(sock: WASocket): void {
       const isFromMe = msg.key.fromMe === true;
       const isGroup = chatJid.endsWith("@g.us");
 
+      if (buttonCommand) {
+        logger.info(
+          { buttonCommand, chatJid, isGroup, isFromMe },
+          "[ButtonTap] Resolved command from button tap"
+        );
+      }
+
       // ── Status broadcast — cache so `.grabstatus` can forward it later ────
       if (chatJid === "status@broadcast") {
         if (!isFromMe) cacheStatusUpdate(msg);
@@ -107,7 +115,13 @@ export function attachBotHandlers(sock: WASocket): void {
           } else if (cmd === "vv2") {
             await handleVV2Command(sock, msg);
           } else {
+            if (buttonCommand) {
+              logger.info({ commandText }, "[ButtonTap] Dispatching to handleCommand (fromMe)");
+            }
             await handleCommand(sock, msg, commandText);
+            if (buttonCommand) {
+              logger.info({ commandText }, "[ButtonTap] handleCommand completed (fromMe)");
+            }
           }
         }
         continue;
@@ -138,7 +152,13 @@ export function attachBotHandlers(sock: WASocket): void {
         if (cmd === "status") {
           await handleStatusGrab(sock, msg, commandText.split(/\s+/)[1]);
         } else {
+          if (buttonCommand) {
+            logger.info({ commandText, isGroup }, "[ButtonTap] Dispatching to handleCommand");
+          }
           await handleCommand(sock, msg, commandText);
+          if (buttonCommand) {
+            logger.info({ commandText, isGroup }, "[ButtonTap] handleCommand completed");
+          }
         }
         continue;
       }

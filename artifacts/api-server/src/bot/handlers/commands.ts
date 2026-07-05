@@ -85,6 +85,21 @@ export function getMessageText(msg: WAMessage): string {
   );
 }
 
+// WhatsApp sometimes wraps the "real" message one level deep (disappearing
+// messages, view-once, etc). Button taps can be affected by this too, so
+// unwrap before looking for the interactive response payload.
+function unwrapMessage(message: any): any {
+  if (!message) return message;
+  return (
+    message.ephemeralMessage?.message ??
+    message.viewOnceMessage?.message ??
+    message.viewOnceMessageV2?.message ??
+    message.viewOnceMessageV2Extension?.message ??
+    message.documentWithCaptionMessage?.message ??
+    message
+  );
+}
+
 // Tapping a native-flow button (e.g. a carousel card's quick_reply button)
 // doesn't produce a plain text message — it produces an
 // `interactiveResponseMessage` whose `nativeFlowResponseMessage.paramsJson`
@@ -93,16 +108,59 @@ export function getMessageText(msg: WAMessage): string {
 // so button taps were silently ignored — no error, no reply, nothing. This
 // pulls the `id` (already prefix-qualified, e.g. ".listfun") back out so it
 // can be routed through the same command handler as a typed command.
+//
+// Handles a few different shapes defensively since button-response formats
+// have changed across WhatsApp/Baileys versions:
+//  - interactiveResponseMessage.nativeFlowResponseMessage.paramsJson (current)
+//  - legacy buttonsResponseMessage.selectedButtonId
+//  - legacy listResponseMessage.singleSelectReply.selectedRowId
 export function getButtonCommand(msg: WAMessage): string | null {
-  const paramsJson = (msg.message as any)?.interactiveResponseMessage
-    ?.nativeFlowResponseMessage?.paramsJson;
-  if (!paramsJson || typeof paramsJson !== "string") return null;
-  try {
-    const parsed = JSON.parse(paramsJson);
-    return typeof parsed?.id === "string" ? parsed.id : null;
-  } catch {
-    return null;
+  const message = unwrapMessage(msg.message as any);
+
+  const nativeFlow = message?.interactiveResponseMessage?.nativeFlowResponseMessage;
+  const paramsJson: unknown = nativeFlow?.paramsJson;
+
+  logger.info(
+    {
+      hasInteractiveResponse: !!message?.interactiveResponseMessage,
+      nativeFlowName: nativeFlow?.name,
+      paramsJson,
+      buttonsResponseMessage: message?.buttonsResponseMessage,
+      listResponseMessage: message?.listResponseMessage,
+    },
+    "[ButtonTap] Incoming interactive response payload"
+  );
+
+  let id: string | null = null;
+
+  if (typeof paramsJson === "string" && paramsJson.length > 0) {
+    try {
+      const parsed = JSON.parse(paramsJson);
+      id =
+        (typeof parsed?.id === "string" && parsed.id) ||
+        (typeof parsed?.selectedId === "string" && parsed.selectedId) ||
+        (typeof parsed?.buttonId === "string" && parsed.buttonId) ||
+        null;
+    } catch {
+      // Not JSON — some clients just echo the raw id string directly.
+      id = paramsJson;
+    }
   }
+
+  // Legacy fallbacks in case an older-style button reply comes through.
+  if (!id && typeof message?.buttonsResponseMessage?.selectedButtonId === "string") {
+    id = message.buttonsResponseMessage.selectedButtonId;
+  }
+  if (
+    !id &&
+    typeof message?.listResponseMessage?.singleSelectReply?.selectedRowId === "string"
+  ) {
+    id = message.listResponseMessage.singleSelectReply.selectedRowId;
+  }
+
+  logger.info({ extractedButtonId: id }, "[ButtonTap] Extracted button id");
+
+  return id;
 }
 
 // ── Dynamic menu builder ──────────────────────────────────────────────────────
