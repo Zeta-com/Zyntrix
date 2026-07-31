@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 import pino from "pino";
 import { patchSockForCTA, attachBotHandlers } from "../handlers/setup.js";
+import { isValidKey, isVerifiedUser, verifyUser } from "../keys.js";
 
 // Support both BOT_TOKEN and TELEGRAM_BOT_TOKEN
 const TOKEN =
@@ -23,7 +24,13 @@ if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true }
 
 const activeSockets = new Map<string, any>();
 const qrMessages = new Map<number, number>();
-const userState: Record<number, string> = {};
+
+// Track pending states per user
+type UserState =
+  | "WAITING_NUM"
+  | "WAITING_KEY";
+
+const userState: Record<number, UserState> = {};
 
 export async function startTelegramBot() {
   if (!TOKEN) {
@@ -39,25 +46,33 @@ export async function startTelegramBot() {
 
   // ── /start ────────────────────────────────────────────────────────────────
   bot.onText(/\/start/, (msg) => {
+    const chatId = msg.chat.id;
+
+    // Already verified? Go straight to the connection menu
+    if (isVerifiedUser(chatId)) {
+      return showConnectionMenu(bot, chatId);
+    }
+
+    // Not verified — ask for auth key first
+    userState[chatId] = "WAITING_KEY";
     bot.sendMessage(
-      msg.chat.id,
-      `👋 *SILENT-V1 Bot Manager*\n\nTap below to link your WhatsApp.`,
-      {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🔗 Link WhatsApp (QR)", callback_data: "link_qr" }],
-            [{ text: "📱 Link with Phone Number", callback_data: "link_pair" }],
-            [{ text: "❓ Help", callback_data: "help" }],
-          ],
-        },
-      }
+      chatId,
+      `🔐 *Welcome to Zyntrix Bot Manager*\n\nThis bot is protected.\nPlease enter your *authorization key* to continue.\n\n_Keys look like:_ \`ZYNT-XXXX-XXXX-XXXX\`\n\n_Contact the bot admin if you don't have a key._`,
+      { parse_mode: "Markdown" }
     );
   });
 
-  bot.onText(/\/link/, (msg) => handleQRLink(bot, msg.chat.id));
+  bot.onText(/\/link/, (msg) => {
+    if (!isVerifiedUser(msg.chat.id)) {
+      return askForKey(bot, msg.chat.id);
+    }
+    handleQRLink(bot, msg.chat.id);
+  });
 
   bot.onText(/\/status/, (msg) => {
+    if (!isVerifiedUser(msg.chat.id)) {
+      return askForKey(bot, msg.chat.id);
+    }
     const id = String(msg.chat.id);
     const active = activeSockets.has(id);
     bot.sendMessage(
@@ -70,6 +85,9 @@ export async function startTelegramBot() {
   });
 
   bot.onText(/\/disconnect/, (msg) => {
+    if (!isVerifiedUser(msg.chat.id)) {
+      return askForKey(bot, msg.chat.id);
+    }
     const id = String(msg.chat.id);
     if (activeSockets.has(id)) {
       const s = activeSockets.get(id);
@@ -83,6 +101,10 @@ export async function startTelegramBot() {
   bot.on("callback_query", async (q) => {
     const chatId = q.message!.chat.id;
     await bot.answerCallbackQuery(q.id);
+
+    if (!isVerifiedUser(chatId) && q.data !== "cancel") {
+      return askForKey(bot, chatId);
+    }
 
     if (q.data === "link_qr") return handleQRLink(bot, chatId);
 
@@ -116,10 +138,33 @@ export async function startTelegramBot() {
     }
   });
 
-  // ── Phone number input ────────────────────────────────────────────────────
+  // ── Message input (key entry + phone number entry) ────────────────────────
   bot.on("message", (msg) => {
     const chatId = msg.chat.id;
-    if (userState[chatId] === "WAITING_NUM" && msg.text && !msg.text.startsWith("/")) {
+    if (!msg.text || msg.text.startsWith("/")) return;
+
+    // ── Auth key verification ─────────────────────────────────────────────
+    if (userState[chatId] === "WAITING_KEY") {
+      const key = msg.text.trim().toUpperCase();
+      if (verifyUser(chatId, key)) {
+        delete userState[chatId];
+        bot.sendMessage(
+          chatId,
+          `✅ *Access Granted!*\n\nWelcome to *Zyntrix Bot Manager* 🎉\n_Your key has been verified. You won't need to enter it again._`,
+          { parse_mode: "Markdown" }
+        ).then(() => showConnectionMenu(bot, chatId));
+      } else {
+        bot.sendMessage(
+          chatId,
+          `❌ *Invalid or revoked key.*\n\nPlease enter a valid \`ZYNT-XXXX-XXXX-XXXX\` key.\n_Contact the bot admin if you don't have one._`,
+          { parse_mode: "Markdown" }
+        );
+      }
+      return;
+    }
+
+    // ── Phone number input ────────────────────────────────────────────────
+    if (userState[chatId] === "WAITING_NUM") {
       const number = msg.text.replace(/[^0-9]/g, "");
       if (number.length < 10) {
         bot.sendMessage(chatId, "🩸 Invalid number.");
@@ -136,6 +181,34 @@ export async function startTelegramBot() {
       startWhatsAppSession(bot, chatId, number, true);
     }
   });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function askForKey(bot: TelegramBot, chatId: number) {
+  userState[chatId] = "WAITING_KEY";
+  bot.sendMessage(
+    chatId,
+    `🔐 *Authorization Required*\n\nPlease enter your Zyntrix key to continue.\n\nFormat: \`ZYNT-XXXX-XXXX-XXXX\``,
+    { parse_mode: "Markdown" }
+  );
+}
+
+function showConnectionMenu(bot: TelegramBot, chatId: number) {
+  bot.sendMessage(
+    chatId,
+    `👋 *Zyntrix Bot Manager*\n\nTap below to link your WhatsApp.`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔗 Link WhatsApp (QR)", callback_data: "link_qr" }],
+          [{ text: "📱 Link with Phone Number", callback_data: "link_pair" }],
+          [{ text: "❓ Help", callback_data: "help" }],
+        ],
+      },
+    }
+  );
 }
 
 // ── Initiate QR link ──────────────────────────────────────────────────────────
@@ -251,7 +324,6 @@ async function startWhatsAppSession(
       // ── Connected — wire up ALL command handlers ──────────────────────────
       if (connection === "open") {
         console.log(`[TG-WA] Connected: ${identifier} ✅`);
-        const myNumber = sock.user?.id?.split(":")[0]?.split("@")[0] ?? "";
 
         const prev = qrMessages.get(tgChatId);
         if (prev) { bot.deleteMessage(tgChatId, prev).catch(() => {}); qrMessages.delete(tgChatId); }

@@ -6,7 +6,9 @@ import type {
   WASocket,
   AnyMessageContent,
   MiscMessageGenerationOptions,
+  WAMessage,
 } from "@whiskeysockets/baileys";
+import { proto, generateWAMessageFromContent } from "@whiskeysockets/baileys";
 import { BOT_CONFIG } from "../config.js";
 import { fakeTypeMode, fakeRecordMode, isChatbotOn } from "../state.js";
 import { cacheMessage, handleDeletedMessage } from "./messageDelete.js";
@@ -20,7 +22,29 @@ import { hasActiveMath, checkMathAnswer } from "../games/math.js";
 import { sendCTA } from "../helpers/cta.js";
 import { logger } from "../../lib/logger.js";
 
-// ── CTA patch: text-only messages get the native "View channel" style ─────────
+// ── fkontak: fake "WhatsApp Business" quoted message that injects the
+//    branded thumbnail / channel badge into any message type ──────────────────
+function makeFkontak(): WAMessage {
+  return {
+    key: {
+      fromMe: false,
+      participant: "0@s.whatsapp.net",
+      remoteJid: "status@broadcast",
+      id: `FKONTAK-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    },
+    message: {
+      contactMessage: {
+        displayName: "WhatsApp Business ✅",
+        vcard:
+          "BEGIN:VCARD\nVERSION:3.0\nFN:WhatsApp Business\nORG:WhatsApp Inc.\nEND:VCARD",
+      },
+    },
+  };
+}
+
+// ── CTA patch: ALL bot messages get the fkontak thumbnail badge ──────────────
+// Text-only messages → sendCTA (channel "View" badge + fkontak context)
+// Media / other messages → injected fkontak as `quoted` when none exists
 export function patchSockForCTA(sock: WASocket): WASocket {
   const original = sock.sendMessage.bind(sock);
 
@@ -30,6 +54,7 @@ export function patchSockForCTA(sock: WASocket): WASocket {
     options?: MiscMessageGenerationOptions
   ) => {
     const c = content as any;
+
     const isTextOnly =
       "text" in c &&
       typeof c.text === "string" &&
@@ -47,6 +72,7 @@ export function patchSockForCTA(sock: WASocket): WASocket {
       !(Array.isArray(c.mentions) && c.mentions.length > 0);
 
     if (isTextOnly) {
+      // Full CTA treatment for text messages (channel badge + fkontak)
       await sendCTA(sock, jid, c.text as string, {
         forwarded: true,
         quoted: options?.quoted as any,
@@ -55,7 +81,15 @@ export function patchSockForCTA(sock: WASocket): WASocket {
       return { key: { id: "", remoteJid: jid, fromMe: true } } as any;
     }
 
-    return original(jid, content, options);
+    // For all other message types (image, video, audio, sticker, document…)
+    // inject fkontak as the quoted message when no quoted is already set.
+    // This makes WhatsApp show the branded thumbnail badge on every reply.
+    const opts = { ...(options ?? {}) };
+    if (!opts.quoted) {
+      opts.quoted = makeFkontak() as any;
+    }
+
+    return original(jid, content, opts);
   };
 
   return sock;
@@ -187,8 +221,6 @@ export function attachBotHandlers(sock: WASocket): void {
         }
 
         // ── Chatbot (AI auto-reply) ──────────────────────────────────────
-        // Replies quote the sender's message instead of @mentioning them —
-        // a reply already makes the context clear without an unnecessary tag.
         if (isChatbotOn(chatJid)) {
           try {
             const aiResponse = await fetchMetaAI(text);
@@ -198,8 +230,6 @@ export function attachBotHandlers(sock: WASocket): void {
           }
         }
       } catch (err: any) {
-        // Never let one bad message silently kill processing of the rest of
-        // the batch, and never let an error disappear without a trace.
         logger.error(
           { err: err?.stack ?? err?.message ?? err, key: msg.key },
           "[MessageHandler] Uncaught error while processing an incoming message"
@@ -219,7 +249,6 @@ export function attachBotHandlers(sock: WASocket): void {
     for (const { key, update } of updates) {
       const proto = update?.message?.protocolMessage;
       if (proto?.type === 0 && proto?.key) {
-        // proto.key is the key of the message that was deleted
         await handleDeletedMessage(sock, { keys: [proto.key] });
       }
     }

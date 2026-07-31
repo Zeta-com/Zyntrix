@@ -44,6 +44,20 @@ import { handleAI, handleImageGen, handleAnimeImage, handleNbCommand } from "./a
 import { handleGroupStatus, handleSetGC } from "./groupstatus.js";
 import { handleGrabStatus } from "./status.js";
 import { sendCarouselMenu, type MenuCard } from "../helpers/carouselMenu.js";
+import {
+  handleSummarize, handleRewrite, handleCode, handleFixCode, handleQuiz, handleStory,
+  handlePoll, handleWarn, handleClearWarn, handleCheckWarns,
+  handleWouldYouRather, handleChatMemory, handleDashboard, handleZyntrix,
+  handleSaveMedia, handleUserInfo, handleGroupStats, handleTopChatters,
+  handleAutoRespond, handleApiStub,
+} from "./v2commands.js";
+import {
+  handleAntiLink, handleAntiSpam, handleAntiBot, handleWelcome, handleGoodbye,
+} from "./groupguard.js";
+import { addSession, removeSession, listSessions } from "../sessions.js";
+import {
+  generateKeys, revokeKey, revokeAllKeys, getKeyStats,
+} from "../keys.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 export function getSender(msg: WAMessage): string {
@@ -112,6 +126,8 @@ const BUTTON_LABEL_TO_COMMAND: Record<string, string> = {
   "tools cmds": "listtools",
   "group cmds": "listgroup",
   "system cmds": "listsystem",
+  "guard cmds": "listguard",
+  "v2 menu": "zyntrix",
   "check ping": "ping",
   "check uptime": "uptime",
 };
@@ -220,113 +236,82 @@ function buildMenu(senderName: string, chatJid: string): string {
   const p = config.BOT_CONFIG.prefix;
   const chatOn = isChatbotOn(chatJid);
 
-  return `┏❐ *◈ ${config.BOT_CONFIG.botName} ◈*
-┃
-┃├◆ 👤 User: ⟦ ${senderName} ⟧
-┃├◆ 📅 Date: ${date}
-┃├◆ ⏰ Time: ${time}
-┃├◆ ⚡ Commands: 100+
-┃├◆ 🤖 Chatbot: ${chatOn ? "ON 🟢" : "OFF 🔴"}
-┃├◆ 🔑 Mode: ${config.isPublicMode ? "Public 🌍" : "Private 🔒"}
-┗❐
+  return `╔═══════════════════╗
+║  ⚡ *${config.BOT_CONFIG.botName} V2* ⚡  ║
+╚═══════════════════╝
+👤 User: ${senderName}
+📅 ${date}  ⏰ ${time}
+⚡ 60+ Commands  🤖 Chatbot: ${chatOn ? "ON 🟢" : "OFF 🔴"}
+🔑 Mode: ${config.isPublicMode ? "Public 🌍" : "Private 🔒"}
 
-┏❐ 《 *OWNER MENU* 》 ❐
-┃├◆ ${p}setowner [number] [name?]
-┃├◆ ${p}owner
-┃├◆ ${p}public / ${p}private
-┃├◆ ${p}faketype on/off
-┃├◆ ${p}fakerecord on/off
-┃├◆ ${p}tojid [channel link]
-┃├◆ ${p}alive
-┗❐
-
-┏❐ 《 *AI MENU* 》 ❐
-┃├◆ ${p}ai / ${p}gpt [question]
-┃├◆ ${p}img [image prompt]
+┏❐ 《 *🧠 AI & SMART TOOLS* 》
+┃├◆ ${p}ai / ${p}ask [question]
+┃├◆ ${p}imagine / ${p}img [prompt]
+┃├◆ ${p}summarize [text or reply]
+┃├◆ ${p}rewrite [style] [text]
+┃├◆ ${p}code [description]
+┃├◆ ${p}fixcode [code or reply]
+┃├◆ ${p}quiz [topic]
+┃├◆ ${p}story [prompt]
+┃├◆ ${p}nb — cinematic transform
 ┃├◆ ${p}animage [anime prompt]
-┃├◆ ${p}nb — cinematic transform (reply to image)
 ┃├◆ ${p}chatbot on/off
-┃├◆ ${p}anime [name]
+┃└◆ ${p}chatmemory [clear]
 ┗❐
 
-┏❐ 《 *MOVIE MENU* 》 ❐
-┃├◆ ${p}movie / ${p}sm [title]
-┃├◆ ${p}dlmovie [id] [season] [ep]
-┃├◆ ${p}smsubs [id] [season] [ep]
+┏❐ 《 *📱 MEDIA & STATUS* 》
+┃├◆ ${p}save — save quoted media
+┃├◆ ${p}vv / ${p}vv2 — view-once reveal
+┃├◆ ${p}sticker / ${p}take — create stickers
+┃├◆ ${p}toimage — sticker → image
+┃├◆ ${p}grabstatus — reply to status to grab it
 ┗❐
 
-┏❐ 《 *GROUP MENU* 》 ❐
-┃├◆ ${p}tagall / ${p}admins
-┃├◆ ${p}kick / ${p}promote / ${p}mute / ${p}unmute
-┃├◆ ${p}groupinfo / ${p}groupmeta
-┃├◆ ${p}groupinvite / ${p}gclink
-┃├◆ ${p}joingroup [link]
-┃├◆ ${p}leavegroup
-┃├◆ ${p}revokeinvite
-┃├◆ ${p}gs / ${p}gcstatus / ${p}swgc [caption]
-┃├◆ ${p}setgc [invite link or JID]
-┃├◆ ${p}getpp [@user]
-┗❐
-
-┏❐ 《 *ANTIDELETE MENU* 》 ❐
-┃├◆ ${p}antidelete on — enable for this chat
-┃├◆ ${p}antidelete off — disable for this chat
-┃├◆ ${p}antidelete — check current status
-┃├◆ ${p}vv — reveal view-once here
-┃├◆ ${p}vv2 — reveal view-once → owner DM
-┃├◆ ${p}grabstatus [@user/number] — send status to your DM (owner)
-┗❐
-
-┏❐ 《 *UTILITY+ MENU* 》 ❐
-┃├◆ ${p}getnewsletter [channel link]
-┃├◆ ${p}getjid [phone number]
-┃├◆ ${p}mention [number] [text]
-┃├◆ ${p}broadcast [message] (owner)
-┗❐
-
-┏❐ 《 *FUN MENU* 》 ❐
-┃├◆ ${p}joke / ${p}meme / ${p}fact
-┃├◆ ${p}truth / ${p}dare / ${p}tod
-┃├◆ ${p}8ball [question]
-┃├◆ ${p}dice / ${p}coinflip / ${p}slots
-┃├◆ ${p}rps [r/p/s]
-┃├◆ ${p}ship / ${p}rate / ${p}choose
-┃├◆ ${p}quote / ${p}roast / ${p}compliment
-┃├◆ ${p}mock / ${p}reverse / ${p}emojify
-┃├◆ ${p}trivia / ${p}math
-┃├◆ ${p}cat / ${p}dog / ${p}random
-┗❐
-
-┏❐ 《 *DOWNLOAD MENU* 》 ❐
-┃├◆ ${p}ytmp3 / ${p}song [search/url]
-┃├◆ ${p}ytmp4 / ${p}ytvid [search/url]
+┏❐ 《 *🎵 DOWNLOADS* 》
+┃├◆ ${p}song / ${p}ytmp3 [search/url]
+┃├◆ ${p}ytvid / ${p}ytmp4 [search/url]
 ┃├◆ ${p}ttdl [tiktok url]
 ┃├◆ ${p}igdl [instagram url]
+┃├◆ ${p}movie / ${p}sm [title]
 ┗❐
 
-┏❐ 《 *TOOLS MENU* 》 ❐
-┃├◆ ${p}wiki [topic]
-┃├◆ ${p}weather [city]
-┃├◆ ${p}translate [lang] [text]
-┃├◆ ${p}calc [expression]
-┃├◆ ${p}qr [text]
-┃├◆ ${p}password [length]
-┃├◆ ${p}shorten [url]
-┃├◆ ${p}base64 encode/decode [text]
-┃├◆ ${p}binary / ${p}hash [text]
-┃├◆ ${p}define [word]
-┃├◆ ${p}ping [url?] / ${p}uptime
-┃├◆ ${p}screenshot [url]
-┃├◆ ${p}sticker / ${p}toimage
-┃├◆ ${p}fancy / ${p}vapor / ${p}emojify [text]
-┃├◆ ${p}crypto [coin]
-┃├◆ ${p}news / ${p}nasa
-┃├◆ ${p}ip [address]
-┃├◆ ${p}country [name]
-┃├◆ ${p}github [user]
-┃├◆ ${p}disappear on/off
+┏❐ 《 *👥 GROUP MANAGEMENT* 》
+┃├◆ ${p}warn @user [reason]
+┃├◆ ${p}clearwarn @user
+┃├◆ ${p}poll Question | A | B | C
+┃├◆ ${p}groupstats / ${p}topchatters
+┃├◆ ${p}autorespond add/remove/list
+┃├◆ ${p}tagall / ${p}admins
+┃├◆ ${p}kick / ${p}promote / ${p}mute
 ┗❐
 
+┏❐ 《 *🛡️ GROUP GUARD* 》
+┃├◆ ${p}antilink on/off
+┃├◆ ${p}antispam on/off
+┃├◆ ${p}antibot on/off
+┃├◆ ${p}welcome on [msg] / off
+┃└◆ ${p}goodbye on [msg] / off
+┗❐
+
+┏❐ 《 *🎮 FUN & GAMES* 》
+┃├◆ ${p}wouldyourather / ${p}wyr
+┃├◆ ${p}truth / ${p}dare / ${p}tod
+┃├◆ ${p}8ball / ${p}joke / ${p}meme
+┃├◆ ${p}trivia / ${p}math / ${p}rps
+┃├◆ ${p}ship / ${p}roast / ${p}compliment
+┗❐
+
+┏❐ 《 *⚙️ SYSTEM & OWNER* 》
+┃├◆ ${p}dashboard — control panel
+┃├◆ ${p}userinfo [@user/number]
+┃├◆ ${p}sessions — connected numbers
+┃├◆ ${p}addsession [name]
+┃├◆ ${p}ping / ${p}uptime / ${p}alive
+┃├◆ ${p}owner / ${p}setowner
+┃└◆ ${p}public / ${p}private
+┗❐
+
+_Use ${p}zyntrix for the full V2 command list_
 _Powered by ${config.BOT_CONFIG.botName} © ${now.getFullYear()}_`;
 }
 
@@ -356,42 +341,12 @@ export async function handleCommand(
       case "menu":
       case "help":
       case "start": {
-        // Real WhatsApp carousel (swipeable cards). Root cause of the two
-        // earlier failures: `carouselMessage` was being sent as a top-level
-        // message field, which Baileys' send pipeline doesn't recognize. Per
-        // WAProto.proto, `carouselMessage` is actually nested *inside*
-        // `interactiveMessage` (a sibling of `nativeFlowMessage` in its
-        // `oneof`), with each card being its own `InteractiveMessage`. See
-        // carouselMenu.ts for the corrected shape. Falls back to the plain
-        // text+image menu if the carousel send fails for any reason.
-        const p = config.BOT_CONFIG.prefix;
-        const sender = getSender(msg);
-        const cards: MenuCard[] = [
-          { title: "🎵 MEDIA TOOLS", description: "Download YouTube, TikTok, Instagram & movies.", buttonText: "📂 Media Cmds", command: `${p}listmedia` },
-          { title: "🧠 AI FEATURES", description: "Chat, image generation & cinematic transforms.", buttonText: "🤖 AI Cmds", command: `${p}listai` },
-          { title: "🎮 FUN & GAMES", description: "Trivia, truth or dare, RPS, math & more.", buttonText: "🎲 Fun Cmds", command: `${p}listfun` },
-          { title: "🛠️ UTILITIES", description: "Weather, translate, QR codes, calculators & more.", buttonText: "⚙️ Tools Cmds", command: `${p}listtools` },
-          { title: "👥 GROUP & ADMIN", description: "Tag all, admins, invite links & moderation.", buttonText: "🛡️ Group Cmds", command: `${p}listgroup` },
-          { title: "⚙️ SYSTEM & OWNER", description: "Bot status, owner tools & configuration.", buttonText: "👑 System Cmds", command: `${p}listsystem` },
-          { title: "🏓 BOT PING", description: "Check the bot's response speed and latency.", buttonText: "⚡ Check Ping", command: `${p}ping` },
-          { title: "⏱️ BOT UPTIME", description: "See how long the bot has been running.", buttonText: "⏳ Check Uptime", command: `${p}uptime` },
-        ];
-
-        const sent = await sendCarouselMenu(sock, jid, {
-          bodyText: `> © ${config.BOT_CONFIG.botName}\n┏ ◆ MOOD: 🧪\n┗ ◆ ${config.BOT_CONFIG.botName} Bot\n\n👋 Hey *@${sender.split("@")[0]}*\nSwipe through the cards below to browse all command categories! 📚`,
-          cards,
-          imageUrl: MENU_IMAGE_URL,
-          footerText: `${config.BOT_CONFIG.botName} Commands`,
-          sender,
-          quoted: msg,
-        });
-
-        if (!sent) {
-          await sock.sendMessage(jid, {
-            image: { url: MENU_IMAGE_URL },
-            caption: buildMenu(senderName, jid),
-          } as any, { quoted: msg });
-        }
+        // Plain text+image menu — reliable on all WhatsApp clients.
+        // The carousel is still in carouselMenu.ts for future use.
+        await sock.sendMessage(jid, {
+          image: { url: MENU_IMAGE_URL },
+          caption: buildMenu(senderName, jid),
+        } as any, { quoted: msg });
         break;
       }
 
@@ -399,42 +354,49 @@ export async function handleCommand(
       case "listmedia": {
         const p = config.BOT_CONFIG.prefix;
         await sock.sendMessage(jid, {
-          text: `┏ ❑ ⌜ *MEDIA TOOLS* ⌟ ◆\n┣ ◆ ${p}song / ${p}ytmp3 [search/url]\n┣ ◆ ${p}ytvid / ${p}ytmp4 [search/url]\n┣ ◆ ${p}ttdl [tiktok url]\n┣ ◆ ${p}igdl [instagram url]\n┣ ◆ ${p}movie / ${p}sm [title]\n┣ ◆ ${p}dlmovie [id] [season] [ep]\n┗ ◆ ${p}smsubs [id] [season] [ep]`,
+          text: `┏ ❑ ⌜ *📂 MEDIA & DOWNLOADS* ⌟ ◆\n┣ ◆ ${p}song / ${p}ytmp3 [search/url]\n┣ ◆ ${p}ytvid / ${p}ytmp4 [search/url]\n┣ ◆ ${p}ttdl [tiktok url]\n┣ ◆ ${p}igdl [instagram url]\n┣ ◆ ${p}movie / ${p}sm [title]\n┣ ◆ ${p}dlmovie [id] [season] [ep]\n┣ ◆ ${p}smsubs [id] [season] [ep]\n┣ ◆ ${p}save — save quoted media\n┣ ◆ ${p}vv — view once reveal\n┣ ◆ ${p}sticker — create sticker\n┗ ◆ ${p}take — branded sticker`,
         }, { quoted: msg });
         break;
       }
       case "listai": {
         const p = config.BOT_CONFIG.prefix;
         await sock.sendMessage(jid, {
-          text: `┏ ❑ ⌜ *AI FEATURES* ⌟ ◆\n┣ ◆ ${p}ai / ${p}gpt [question]\n┣ ◆ ${p}img / ${p}imagine [prompt]\n┣ ◆ ${p}animage [anime prompt]\n┣ ◆ ${p}nb — cinematic transform (reply to image)\n┣ ◆ ${p}chatbot on/off\n┗ ◆ ${p}anime [name]`,
+          text: `┏ ❑ ⌜ *🧠 AI & SMART TOOLS* ⌟ ◆\n┣ ◆ ${p}ai / ${p}ask [question]\n┣ ◆ ${p}imagine / ${p}img [prompt]\n┣ ◆ ${p}animage [anime prompt]\n┣ ◆ ${p}nb — cinematic transform\n┣ ◆ ${p}summarize [text or reply]\n┣ ◆ ${p}rewrite [style] [text]\n┣ ◆ ${p}code [description]\n┣ ◆ ${p}fixcode [code or reply]\n┣ ◆ ${p}quiz [topic]\n┣ ◆ ${p}story [prompt]\n┣ ◆ ${p}chatbot on/off\n┣ ◆ ${p}chatmemory [clear]\n┣ ◆ ${p}anime [name]\n┗ ◆ ${p}vision* / ${p}edit* / ${p}voice* _(API required)_`,
         }, { quoted: msg });
         break;
       }
       case "listfun": {
         const p = config.BOT_CONFIG.prefix;
         await sock.sendMessage(jid, {
-          text: `┏ ❑ ⌜ *FUN & GAMES* ⌟ ◆\n┣ ◆ ${p}joke / ${p}meme / ${p}fact\n┣ ◆ ${p}truth / ${p}dare / ${p}tod\n┣ ◆ ${p}8ball [question]\n┣ ◆ ${p}dice / ${p}coinflip / ${p}slots\n┣ ◆ ${p}rps [r/p/s]\n┣ ◆ ${p}ship / ${p}rate / ${p}choose\n┣ ◆ ${p}quote / ${p}roast / ${p}compliment\n┣ ◆ ${p}mock / ${p}reverse / ${p}emojify\n┣ ◆ ${p}trivia / ${p}math\n┗ ◆ ${p}cat / ${p}dog / ${p}random`,
+          text: `┏ ❑ ⌜ *🎮 FUN & GAMES* ⌟ ◆\n┣ ◆ ${p}joke / ${p}meme / ${p}fact\n┣ ◆ ${p}truth / ${p}dare / ${p}tod\n┣ ◆ ${p}8ball [question]\n┣ ◆ ${p}wouldyourather / ${p}wyr\n┣ ◆ ${p}dice / ${p}coinflip / ${p}slots\n┣ ◆ ${p}rps [r/p/s]\n┣ ◆ ${p}ship / ${p}rate / ${p}choose\n┣ ◆ ${p}quote / ${p}roast / ${p}compliment\n┣ ◆ ${p}mock / ${p}reverse / ${p}emojify\n┣ ◆ ${p}trivia / ${p}math\n┗ ◆ ${p}cat / ${p}dog / ${p}random`,
         }, { quoted: msg });
         break;
       }
       case "listtools": {
         const p = config.BOT_CONFIG.prefix;
         await sock.sendMessage(jid, {
-          text: `┏ ❑ ⌜ *UTILITIES* ⌟ ◆\n┣ ◆ ${p}wiki [topic]\n┣ ◆ ${p}weather [city]\n┣ ◆ ${p}translate [lang] [text]\n┣ ◆ ${p}calc [expression]\n┣ ◆ ${p}qr [text]\n┣ ◆ ${p}password [length]\n┣ ◆ ${p}shorten [url]\n┣ ◆ ${p}base64 encode/decode [text]\n┣ ◆ ${p}binary / ${p}hash [text]\n┣ ◆ ${p}define [word]\n┣ ◆ ${p}screenshot [url]\n┣ ◆ ${p}sticker / ${p}toimage\n┣ ◆ ${p}fancy / ${p}vapor / ${p}emojify [text]\n┣ ◆ ${p}crypto [coin]\n┣ ◆ ${p}news / ${p}nasa\n┣ ◆ ${p}ip [address] / ${p}country [name]\n┣ ◆ ${p}github [user]\n┗ ◆ ${p}disappear on/off`,
+          text: `┏ ❑ ⌜ *⚙️ UTILITIES* ⌟ ◆\n┣ ◆ ${p}wiki [topic]\n┣ ◆ ${p}weather [city]\n┣ ◆ ${p}translate [lang] [text]\n┣ ◆ ${p}calc [expression]\n┣ ◆ ${p}qr [text]\n┣ ◆ ${p}password [length]\n┣ ◆ ${p}shorten [url]\n┣ ◆ ${p}base64 encode/decode [text]\n┣ ◆ ${p}binary / ${p}hash [text]\n┣ ◆ ${p}define [word]\n┣ ◆ ${p}screenshot [url]\n┣ ◆ ${p}sticker / ${p}toimage\n┣ ◆ ${p}fancy / ${p}vapor / ${p}emojify [text]\n┣ ◆ ${p}crypto [coin]\n┣ ◆ ${p}news / ${p}nasa\n┣ ◆ ${p}ip [address] / ${p}country [name]\n┣ ◆ ${p}github [user]\n┗ ◆ ${p}disappear on/off`,
         }, { quoted: msg });
         break;
       }
       case "listgroup": {
         const p = config.BOT_CONFIG.prefix;
         await sock.sendMessage(jid, {
-          text: `┏ ❑ ⌜ *GROUP & ADMIN* ⌟ ◆\n┣ ◆ ${p}tagall / ${p}admins\n┣ ◆ ${p}kick / ${p}promote / ${p}mute / ${p}unmute\n┣ ◆ ${p}groupinfo / ${p}groupmeta\n┣ ◆ ${p}groupinvite / ${p}gclink\n┣ ◆ ${p}joingroup [link] / ${p}leavegroup\n┣ ◆ ${p}revokeinvite\n┣ ◆ ${p}gs / ${p}gcstatus / ${p}swgc [caption]\n┣ ◆ ${p}setgc [invite link or JID]\n┗ ◆ ${p}getpp [@user]`,
+          text: `┏ ❑ ⌜ *👥 GROUP MANAGEMENT* ⌟ ◆\n┣ ◆ ${p}tagall / ${p}admins\n┣ ◆ ${p}kick / ${p}promote / ${p}mute / ${p}unmute\n┣ ◆ ${p}warn @user [reason]\n┣ ◆ ${p}clearwarn @user\n┣ ◆ ${p}warnings [@user]\n┣ ◆ ${p}poll Question | Opt1 | Opt2\n┣ ◆ ${p}groupinfo / ${p}groupmeta\n┣ ◆ ${p}groupstats — group stats\n┣ ◆ ${p}topchatters — top chatters\n┣ ◆ ${p}autorespond add/remove/list\n┣ ◆ ${p}groupinvite / ${p}gclink\n┣ ◆ ${p}joingroup [link] / ${p}leavegroup\n┣ ◆ ${p}revokeinvite\n┣ ◆ ${p}gs / ${p}gcstatus / ${p}swgc [caption]\n┣ ◆ ${p}setgc [invite link or JID]\n┗ ◆ ${p}getpp [@user]`,
+        }, { quoted: msg });
+        break;
+      }
+      case "listguard": {
+        const p = config.BOT_CONFIG.prefix;
+        await sock.sendMessage(jid, {
+          text: `┏ ❑ ⌜ *🛡️ GROUP GUARD* ⌟ ◆\n┣ ◆ ${p}antilink on/off — block links\n┣ ◆ ${p}antispam on/off — block spam\n┣ ◆ ${p}antibot on/off — remove bots on join\n┣ ◆ ${p}welcome on [msg] / off\n┣ ◆ ${p}goodbye on [msg] / off\n┗ _Use {name} in welcome/goodbye as placeholder_\n\n_All group guard features require owner/admin._`,
         }, { quoted: msg });
         break;
       }
       case "listsystem": {
         const p = config.BOT_CONFIG.prefix;
         await sock.sendMessage(jid, {
-          text: `┏ ❑ ⌜ *SYSTEM & OWNER* ⌟ ◆\n┣ ◆ ${p}ping / ${p}uptime / ${p}alive\n┣ ◆ ${p}owner / ${p}setowner [number] [name?]\n┣ ◆ ${p}public / ${p}private\n┣ ◆ ${p}antidelete on/off\n┣ ◆ ${p}grabstatus [@user/number]\n┣ ◆ ${p}faketype on/off / ${p}fakerecord on/off\n┣ ◆ ${p}broadcast [message] (owner)\n┗ ◆ ${p}getnewsletter [channel link]`,
+          text: `┏ ❑ ⌜ *⚙️ SYSTEM & OWNER* ⌟ ◆\n┣ ◆ ${p}ping / ${p}uptime / ${p}alive\n┣ ◆ ${p}owner / ${p}setowner [number] [name?]\n┣ ◆ ${p}public / ${p}private\n┣ ◆ ${p}antidelete on/off\n┣ ◆ ${p}grabstatus — reply to a status\n┣ ◆ ${p}userinfo [@user/number]\n┣ ◆ ${p}dashboard — bot control panel\n┣ ◆ ${p}sessions — connected numbers\n┣ ◆ ${p}addsession [name] — add number\n┣ ◆ ${p}removesession [name] — remove\n┣ ◆ ${p}faketype on/off / ${p}fakerecord on/off\n┣ ◆ ${p}broadcast [message] (owner)\n┗ ◆ ${p}getnewsletter [channel link]`,
         }, { quoted: msg });
         break;
       }
@@ -859,7 +821,314 @@ export async function handleCommand(
         await handleGrabStatus(sock, msg, rest);
         break;
 
+      // ── V2 AI COMMANDS ────────────────────────────────────────────────────
+      case "summarize":
+      case "sum":
+        await handleSummarize(sock, msg, rest);
+        break;
+
+      case "rewrite":
+      case "rw":
+        await handleRewrite(sock, msg, rest);
+        break;
+
+      case "code":
+      case "gencode":
+        await handleCode(sock, msg, rest);
+        break;
+
+      case "fixcode":
+      case "fix":
+        await handleFixCode(sock, msg, rest);
+        break;
+
+      case "quiz":
+        await handleQuiz(sock, msg, rest);
+        break;
+
+      case "story":
+        await handleStory(sock, msg, rest);
+        break;
+
+      case "wouldyourather":
+      case "wyr":
+        await handleWouldYouRather(sock, msg);
+        break;
+
+      case "chatmemory":
+      case "memory":
+        await handleChatMemory(sock, msg, rest);
+        break;
+
+      // ── V2 MEDIA ─────────────────────────────────────────────────────────
+      case "save":
+        await handleSaveMedia(sock, msg);
+        break;
+
+      // ── V2 POLLS ─────────────────────────────────────────────────────────
+      case "poll":
+        await handlePoll(sock, msg, rest);
+        break;
+
+      // ── V2 WARN SYSTEM ───────────────────────────────────────────────────
+      case "warn":
+        await handleWarn(sock, msg, rest);
+        break;
+
+      case "clearwarn":
+      case "unwarn":
+        await handleClearWarn(sock, msg);
+        break;
+
+      case "warnings":
+      case "checkwarn":
+        await handleCheckWarns(sock, msg);
+        break;
+
+      // ── V2 GROUP STATS ───────────────────────────────────────────────────
+      case "groupstats":
+      case "gstats":
+        await handleGroupStats(sock, msg);
+        break;
+
+      case "topchatters":
+      case "top":
+        await handleTopChatters(sock, msg);
+        break;
+
+      // ── V2 AUTO-RESPOND ──────────────────────────────────────────────────
+      case "autorespond":
+      case "ar":
+        await handleAutoRespond(sock, msg, rest);
+        break;
+
+      // ── V2 GROUP GUARD ───────────────────────────────────────────────────
+      case "antilink":
+        await handleAntiLink(sock, msg, rest);
+        break;
+
+      case "antispam":
+        await handleAntiSpam(sock, msg, rest);
+        break;
+
+      case "antibot":
+        await handleAntiBot(sock, msg, rest);
+        break;
+
+      case "welcome":
+        await handleWelcome(sock, msg, rest);
+        break;
+
+      case "goodbye":
+      case "bye":
+        await handleGoodbye(sock, msg, rest);
+        break;
+
+      // ── V2 USER INFO ─────────────────────────────────────────────────────
+      case "userinfo":
+      case "whois":
+      case "profile":
+        await handleUserInfo(sock, msg);
+        break;
+
+      // ── V2 DASHBOARD ─────────────────────────────────────────────────────
+      case "dashboard":
+      case "panel":
+        await handleDashboard(sock, msg);
+        break;
+
+      case "zyntrix":
+      case "v2":
+        await handleZyntrix(sock, msg);
+        break;
+
+      // ── V2 SESSION MANAGEMENT ─────────────────────────────────────────────
+      case "sessions": {
+        if (!isOwner(msg)) { await sock.sendMessage(jid, { text: "👑 *Owner only!*" }, { quoted: msg }); break; }
+        const list = listSessions();
+        await sock.sendMessage(jid, {
+          text: list.length === 0
+            ? "📱 *No extra sessions active.*\nOnly the main session is running.\n\n_Use .addsession [name] to add one._"
+            : `📱 *Active Sessions (${list.length})*\n\n${list.map((s, i) => `${i + 1}. \`${s.id}\` — ${s.connected ? "🟢 Connected" : "🔴 Disconnected"}`).join("\n")}`,
+        }, { quoted: msg });
+        break;
+      }
+
+      case "addsession": {
+        if (!isOwner(msg)) { await sock.sendMessage(jid, { text: "👑 *Owner only!*" }, { quoted: msg }); break; }
+        if (!rest) { await sock.sendMessage(jid, { text: "Usage: `.addsession <name>`" }, { quoted: msg }); break; }
+        await sock.sendMessage(jid, { text: `⏳ *Starting session:* \`${rest}\`...\n\nCheck your Telegram for the QR code, or use pairing code via the session name.` }, { quoted: msg });
+        await addSession(rest);
+        break;
+      }
+
+      case "removesession": {
+        if (!isOwner(msg)) { await sock.sendMessage(jid, { text: "👑 *Owner only!*" }, { quoted: msg }); break; }
+        if (!rest) { await sock.sendMessage(jid, { text: "Usage: `.removesession <name>`" }, { quoted: msg }); break; }
+        removeSession(rest);
+        await sock.sendMessage(jid, { text: `✅ *Session \`${rest}\` removed.*` }, { quoted: msg });
+        break;
+      }
+
+      // ── COMMAND SEARCH ────────────────────────────────────────────────────
+      case "search":
+      case "find":
+      case "cmdsearch": {
+        if (!rest) {
+          await sock.sendMessage(jid, {
+            text: `🔍 *Command Search*\n\nDescribe what you're looking for and I'll find the right command!\n\nUsage: \`.search what you want to do\`\n\nExamples:\n• \`.search download youtube video\`\n• \`.search send someone a funny insult\`\n• \`.search block links in group\``,
+          }, { quoted: msg });
+          break;
+        }
+        const p = config.BOT_CONFIG.prefix;
+        const query = rest.toLowerCase();
+        // Keyword map: description fragments → command suggestions
+        const commandMap: Array<{ keywords: string[]; cmd: string; desc: string }> = [
+          { keywords: ["youtube","yt","video","download video","music","song","audio","mp3","mp4"], cmd: `${p}ytmp3 / ${p}ytmp4`, desc: "Download YouTube audio or video" },
+          { keywords: ["tiktok","tt","tok"], cmd: `${p}ttdl`, desc: "Download TikTok videos" },
+          { keywords: ["instagram","ig","insta","reel"], cmd: `${p}igdl`, desc: "Download Instagram posts/reels" },
+          { keywords: ["movie","film","series","watch","cinema"], cmd: `${p}movie`, desc: "Search and download movies" },
+          { keywords: ["ai","gpt","chatgpt","ask","question","answer","chat"], cmd: `${p}ai`, desc: "Ask the AI anything" },
+          { keywords: ["image","generate","create image","picture","photo","art"], cmd: `${p}imagine`, desc: "Generate AI images" },
+          { keywords: ["sticker","make sticker","create sticker"], cmd: `${p}sticker`, desc: "Convert image/video to sticker" },
+          { keywords: ["summarize","summary","shorten text","tl;dr","brief"], cmd: `${p}summarize`, desc: "Summarize long text or a quoted message" },
+          { keywords: ["rewrite","paraphrase","rephrase","improve writing"], cmd: `${p}rewrite`, desc: "Rewrite text in a different style" },
+          { keywords: ["code","write code","generate code","programming","script"], cmd: `${p}code`, desc: "Generate code from a description" },
+          { keywords: ["fix code","debug","error in code","broken code"], cmd: `${p}fixcode`, desc: "Debug and fix code" },
+          { keywords: ["quiz","test","question","trivia"], cmd: `${p}quiz`, desc: "Get a quiz question on any topic" },
+          { keywords: ["story","write story","fiction","narrative","tale"], cmd: `${p}story`, desc: "Generate a short story" },
+          { keywords: ["joke","funny","laugh","humor","comedy"], cmd: `${p}joke`, desc: "Get a random joke" },
+          { keywords: ["truth","dare","game","truth or dare"], cmd: `${p}tod`, desc: "Play truth or dare" },
+          { keywords: ["would you rather","wyr","choice","dilemma"], cmd: `${p}wyr`, desc: "Would you rather question" },
+          { keywords: ["weather","temperature","forecast","rain","climate"], cmd: `${p}weather`, desc: "Get weather for any city" },
+          { keywords: ["translate","language","translation","convert language"], cmd: `${p}translate`, desc: "Translate text to another language" },
+          { keywords: ["calculator","calculate","math","equation","solve"], cmd: `${p}calc`, desc: "Calculate a math expression" },
+          { keywords: ["qr","qr code","barcode","generate qr"], cmd: `${p}qr`, desc: "Generate a QR code" },
+          { keywords: ["wiki","wikipedia","information","about","facts"], cmd: `${p}wiki`, desc: "Search Wikipedia" },
+          { keywords: ["warn","warning","strike","punish member"], cmd: `${p}warn`, desc: "Warn a group member" },
+          { keywords: ["poll","vote","question members","survey"], cmd: `${p}poll`, desc: "Create a poll in the group" },
+          { keywords: ["tagall","mention all","tag everyone","ping all"], cmd: `${p}tagall`, desc: "Mention everyone in the group" },
+          { keywords: ["kick","remove member","remove user"], cmd: `${p}kick`, desc: "Kick a member from the group" },
+          { keywords: ["antilink","block link","remove link","no links"], cmd: `${p}antilink`, desc: "Block links in the group" },
+          { keywords: ["antispam","block spam","spam filter"], cmd: `${p}antispam`, desc: "Block spam messages in the group" },
+          { keywords: ["welcome","greet new member","join message"], cmd: `${p}welcome`, desc: "Set a welcome message for new members" },
+          { keywords: ["goodbye","leave message","bye message"], cmd: `${p}goodbye`, desc: "Set a goodbye message when members leave" },
+          { keywords: ["save","save media","save photo","save video","download media"], cmd: `${p}save`, desc: "Save quoted media to your DM" },
+          { keywords: ["status","grab status","download status","someone status"], cmd: `${p}grabstatus`, desc: "Reply to a status to grab it" },
+          { keywords: ["view once","reveal","see view once","vv"], cmd: `${p}vv`, desc: "Reveal view-once messages" },
+          { keywords: ["group stats","activity","most active","chat count"], cmd: `${p}groupstats`, desc: "Show group message statistics" },
+          { keywords: ["top chatters","most messages","active users"], cmd: `${p}topchatters`, desc: "Show who sends the most messages" },
+          { keywords: ["auto respond","auto reply","keyword reply","auto answer"], cmd: `${p}autorespond`, desc: "Set up keyword auto-responses" },
+          { keywords: ["ping","latency","speed","response time"], cmd: `${p}ping`, desc: "Check bot speed and latency" },
+          { keywords: ["uptime","how long running","bot age"], cmd: `${p}uptime`, desc: "Check how long the bot has been running" },
+          { keywords: ["dashboard","control panel","bot stats","overview"], cmd: `${p}dashboard`, desc: "View bot dashboard and stats" },
+          { keywords: ["sessions","multiple numbers","extra number","add number"], cmd: `${p}sessions`, desc: "Manage multiple WhatsApp sessions" },
+          { keywords: ["crypto","bitcoin","ethereum","price","coin"], cmd: `${p}crypto`, desc: "Get cryptocurrency prices" },
+          { keywords: ["news","headlines","today","current events"], cmd: `${p}news`, desc: "Get the latest news" },
+          { keywords: ["roast","insult","burn","clap back"], cmd: `${p}roast`, desc: "Roast someone with an AI comeback" },
+          { keywords: ["compliment","nice words","praise","appreciate"], cmd: `${p}compliment`, desc: "Compliment someone" },
+          { keywords: ["ship","relationship","couple","love meter"], cmd: `${p}ship`, desc: "Calculate relationship compatibility" },
+          { keywords: ["chat memory","conversation history","remember"], cmd: `${p}chatmemory`, desc: "View or clear your AI conversation history" },
+          { keywords: ["user info","profile info","who is","phone number info"], cmd: `${p}userinfo`, desc: "Get info about a user" },
+          { keywords: ["password","generate password","strong password","random password"], cmd: `${p}password`, desc: "Generate a secure password" },
+          { keywords: ["github","git","developer","repo"], cmd: `${p}github`, desc: "Look up a GitHub profile" },
+        ];
+        const matches = commandMap.filter(e =>
+          e.keywords.some(k => query.includes(k))
+        );
+        if (matches.length === 0) {
+          await sock.sendMessage(jid, {
+            text: `🔍 *No matching commands found for:* "${rest}"\n\n_Try different words, or use ${p}menu to browse all categories._`,
+          }, { quoted: msg });
+        } else {
+          const top = matches.slice(0, 5);
+          const lines = top.map((m, i) => `${i + 1}. \`${m.cmd}\`\n   ↳ ${m.desc}`).join("\n\n");
+          await sock.sendMessage(jid, {
+            text: `🔍 *Results for:* "${rest}"\n\n${lines}\n\n_Showing ${top.length} of ${matches.length} match(es). Use ${p}menu for full list._`,
+          }, { quoted: msg });
+        }
+        break;
+      }
+
+      // ── KEYS (WhatsApp — owner only) ──────────────────────────────────────
+      case "keys": {
+        if (!isOwner(msg)) { await sock.sendMessage(jid, { text: "👑 *Owner only!*" }, { quoted: msg }); break; }
+        // Usage: .keys <password>
+        if (rest.trim() !== "2483") {
+          await sock.sendMessage(jid, {
+            text: `🔑 *Key Generator*\n\nSend your password to generate 4 new Zyntrix keys:\n\`${config.BOT_CONFIG.prefix}keys <password>\``,
+          }, { quoted: msg });
+          break;
+        }
+        const newKeys = generateKeys(4);
+        const stats = getKeyStats();
+        await sock.sendMessage(jid, {
+          text: `✅ *4 New Keys Generated!*\n\n${newKeys.map((k, i) => `${i + 1}. \`${k}\``).join("\n")}\n\n📊 Total valid keys: *${stats.valid}*\n_Share these with users who need bot access._`,
+        }, { quoted: msg });
+        break;
+      }
+
+      case "revokeall": {
+        if (!isOwner(msg)) { await sock.sendMessage(jid, { text: "👑 *Owner only!*" }, { quoted: msg }); break; }
+        const count = revokeAllKeys();
+        await sock.sendMessage(jid, {
+          text: `🚫 *All Keys Revoked!*\n\n*${count}* keys have been invalidated.\nAll users will need new keys to access the Telegram bot.\n\n_Use ${config.BOT_CONFIG.prefix}keys to generate new ones._`,
+        }, { quoted: msg });
+        break;
+      }
+
+      // ── API STUBS (need external API) ─────────────────────────────────────
+      case "vision":
+      case "ocr":
+      case "read":
+        await handleApiStub(sock, msg, command, "OpenAI Vision API", "analyze images, extract text from photos, and read documents");
+        break;
+
+      case "voice":
+        await handleApiStub(sock, msg, command, "Text-to-Speech API", "convert text to natural-sounding voice messages");
+        break;
+
+      case "edit":
+        await handleApiStub(sock, msg, command, "Image Editing AI API", "edit and transform images with AI instructions");
+        break;
+
+      case "agent":
+      case "autopilot":
+        await handleApiStub(sock, msg, command, "OpenAI Assistants API", "run autonomous AI agents that complete complex multi-step tasks");
+        break;
+
+      case "commandai":
+        await handleApiStub(sock, msg, command, "OpenAI Function Calling API", "AI that can execute any bot command by understanding natural language");
+        break;
+
+      case "plan":
+      case "myplan":
+      case "buy":
+      case "redeem":
+      case "keygen":
+      case "usage":
+        await handleApiStub(sock, msg, command, "Payment Gateway + Database", "manage premium plans, subscriptions and billing");
+        break;
+
       default:
+        // Handle .revoke<key> pattern (e.g. .revokeZYNT-XXX-XXX-XXX)
+        if (command.startsWith("revoke") && command.length > 6) {
+          if (!isOwner(msg)) { await sock.sendMessage(jid, { text: "👑 *Owner only!*" }, { quoted: msg }); break; }
+          // Support both .revokeZYNT-... and .revoke ZYNT-...
+          const keyArg = command.slice(6).toUpperCase() || rest.toUpperCase();
+          if (!keyArg) {
+            await sock.sendMessage(jid, { text: `Usage: \`.revoke ZYNT-XXXX-XXXX-XXXX\`\nOr: \`.revokeZYNT-XXXX-XXXX-XXXX\`` }, { quoted: msg });
+          } else {
+            const ok = revokeKey(keyArg);
+            const stats = getKeyStats();
+            await sock.sendMessage(jid, {
+              text: ok
+                ? `✅ *Key Revoked!*\n\n\`${keyArg}\` is now invalid.\nAny user who had this key will need a new one.\n\n📊 Remaining valid keys: *${stats.valid}*`
+                : `❌ *Key not found:* \`${keyArg}\`\n_It may already be revoked or doesn't exist._`,
+            }, { quoted: msg });
+          }
+          break;
+        }
         break;
     }
   } catch (err) {
