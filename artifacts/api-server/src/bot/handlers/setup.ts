@@ -69,6 +69,7 @@ export function patchSockForCTA(sock: WASocket): WASocket {
       !("poll" in c) &&
       !("disappearingMessagesInChat" in c) &&
       !("groupUpdate" in c) &&
+      // Don't strip @mentions — pass those through as-is
       !(Array.isArray(c.mentions) && c.mentions.length > 0);
 
     if (isTextOnly) {
@@ -224,7 +225,17 @@ export function attachBotHandlers(sock: WASocket): void {
         if (isChatbotOn(chatJid)) {
           try {
             const aiResponse = await fetchMetaAI(text);
-            await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
+            if (isGroup && sender) {
+              const senderNum = sender.split("@")[0];
+              // messages with mentions bypass CTA patch (see patchSockForCTA)
+              await sock.sendMessage(
+                chatJid,
+                { text: `@${senderNum} ${aiResponse}`, mentions: [sender] } as any,
+                { quoted: msg }
+              );
+            } else {
+              await sock.sendMessage(chatJid, { text: aiResponse }, { quoted: msg });
+            }
           } catch (err: any) {
             logger.error({ err: err?.message ?? err }, "[Chatbot] Failed to send reply");
           }

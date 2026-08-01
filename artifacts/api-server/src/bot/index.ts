@@ -96,9 +96,6 @@ export async function startBot() {
         } else {
           // Covers everything else — network drops (data toggled off),
           // connectionLost, restartRequired, timedOut, badSession, etc.
-          // Baileys/Node will keep failing DNS lookups while there's no
-          // network, so we just keep retrying with a short fixed delay
-          // until the connection succeeds again once network returns.
           scheduleReconnect(3000);
         }
       } else if (connection === "open") {
