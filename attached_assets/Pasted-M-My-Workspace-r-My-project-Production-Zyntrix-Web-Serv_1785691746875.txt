@@ -1,0 +1,71 @@
+M
+My Workspace
+
+
+r
+My project
+
+Production
+
+Zyntrix
+
+Web Service
+Zyntrix
+Node
+Free
+Upgrade your instance
+
+Connect
+
+Manual Deploy
+Service ID:
+srv-d9nnpuqjnfac73bfh7pg
+
+Zeta-com / Zyntrix
+main
+https://zyntrix-jwj1.onrender.com
+
+Your free instance will spin down with inactivity, which can delay requests by 50 seconds or more.
+Upgrade now
+August 2, 2026 at 6:23 PM
+failed
+356db8a
+feat: merge V2 full update — 60+ commands, Telegram key gate, group chatbot mentions, warn system, group guard, auto-respond, fkontak on all messages
+
+Rollback
+Exited with status 1 while building your code.
+Read our docs for common ways to troubleshoot your deploy.
+
+All logs
+Search
+Search logs
+
+Aug 2, 6:22 PM - 6:24 PM
+GMT+1
+
+
+
+==> Cloning from https://github.com/Zeta-com/Zyntrix
+==> Checking out commit 356db8a7c1e89934f972a44bb84b6ddb72d8b7e5 in branch main
+==> Using Node.js version 24.14.1 (default)
+==> Docs on specifying a Node.js version: https://render.com/docs/node-version
+==> Running build command 'pnpm install --frozen-lockfile; pnpm run build'...
+ ERR_PNPM_JSON_PARSE  Expected ',' or '}' after property value in JSON at position 211 (line 8 column 21) while parsing '{  "name": "@workspace/api-server",  "' in /opt/render/project/src/artifacts/api-server/package.json
+> workspace@0.0.0 build /opt/render/project/src
+> pnpm run typecheck && pnpm -r --if-present run build
+> workspace@0.0.0 typecheck /opt/render/project/src
+> pnpm run typecheck:libs && pnpm -r --filter "./artifacts/**" --filter "./scripts" --if-present run typecheck
+> workspace@0.0.0 typecheck:libs /opt/render/project/src
+> tsc --build
+error TS2688: Cannot find type definition file for 'node'.
+  The file is in the program because:
+    Entry point of type library 'node' specified in compilerOptions
+lib/api-client-react/src/generated/api.ts(8,26): error TS2307: Cannot find module '@tanstack/react-query' or its corresponding type declarations.
+lib/api-client-react/src/generated/api.ts(14,8): error TS2307: Cannot find module '@tanstack/react-query' or its corresponding type declarations.
+lib/api-client-react/src/generated/api.ts(64,5): error TS7031: Binding element 'signal' implicitly has an 'any' type.
+lib/api-zod/src/generated/api.ts(8,22): error TS2307: Cannot find module 'zod' or its corresponding type declarations.
+ ELIFECYCLE  Command failed with exit code 1.
+ ELIFECYCLE  Command failed with exit code 1.
+ ELIFECYCLE  Command failed with exit code 1.
+==> Build failed 😞
+==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
