@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -e
 
-# Use pnpm directly without modifying the read-only filesystem
-# Corepack is available via npm/npx on Render, but we use corepack exec instead of enable
-corepack exec pnpm --version
+# Install pnpm using Corepack without modifying the read-only filesystem
+# Corepack resolves the packageManager field from package.json to activate pnpm
+npm install -g corepack
+corepack use pnpm@latest
 
 # Install deps and build only the api-server package
 cd artifacts/api-server
