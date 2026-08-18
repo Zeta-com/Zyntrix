@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
-# Install pnpm using Corepack without modifying the read-only filesystem
-# Corepack resolves the packageManager field from package.json to activate pnpm
-npm install -g corepack
-corepack use pnpm@latest
+# Set Corepack to use user cache directory instead of modifying system files
+export COREPACK_HOME="$HOME/.corepack"
+
+# Activate pnpm using Corepack (reads packageManager from package.json)
+corepack use pnpm
 
 # Install deps and build only the api-server package
 cd artifacts/api-server
