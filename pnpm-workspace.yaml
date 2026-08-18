@@ -78,6 +78,12 @@ onlyBuiltDependencies:
   - sharp
   - unrs-resolver
 
+allowBuilds:
+  '@whiskeysockets/baileys': true
+  esbuild: true
+  protobufjs: true
+  sharp: true
+
 overrides:
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"
