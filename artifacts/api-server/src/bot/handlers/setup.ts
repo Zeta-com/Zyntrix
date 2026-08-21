@@ -104,7 +104,7 @@ export function attachBotHandlers(sock: WASocket): void {
     for (const msg of messages) {
       try {
         if (!msg.message) continue;
-
+  console.log("🔥 MESSAGE RECEIVED:", getMessageText(msg));
         // A tapped native-flow button (e.g. a carousel card) produces an
         // interactiveResponseMessage, not plain text — resolve its `id` first
         // so button taps route through the same command handler as typed text.
