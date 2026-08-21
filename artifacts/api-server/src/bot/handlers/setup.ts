@@ -109,7 +109,9 @@ export function attachBotHandlers(sock: WASocket): void {
         // interactiveResponseMessage, not plain text — resolve its `id` first
         // so button taps route through the same command handler as typed text.
         const buttonCommand = getButtonCommand(msg);
-        const text = buttonCommand ?? getMessageText(msg);
+        const text = buttonCommand
+  ? `${BOT_CONFIG.prefix}${buttonCommand}`
+  : getMessageText(msg);
         const chatJid = getJid(msg);
         const sender = msg.key.participant ?? msg.key.remoteJid ?? "";
         const isFromMe = msg.key.fromMe === true;
