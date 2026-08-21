@@ -1,4 +1,9 @@
-import type { WASocket, WAMessage } from "@whiskeysockets/baileys";
+import {
+  generateWAMessageFromContent,
+  proto,
+  type WASocket,
+  type WAMessage,
+} from "@whiskeysockets/baileys";
 import * as config from "../config.js";
 import { setOwnerNumber } from "../config.js";
 import { getUptime } from "../store.js";
@@ -43,7 +48,6 @@ import {
 import { handleAI, handleImageGen, handleAnimeImage, handleNbCommand } from "./ai.js";
 import { handleGroupStatus, handleSetGC } from "./groupstatus.js";
 import { handleGrabStatus } from "./status.js";
-import { sendCarouselMenu, type MenuCard } from "../helpers/carouselMenu.js";
 import {
   handleSummarize, handleRewrite, handleCode, handleFixCode, handleQuiz, handleStory,
   handlePoll, handleWarn, handleClearWarn, handleCheckWarns,
@@ -339,16 +343,112 @@ export async function handleCommand(
 
       // ── MENU ──────────────────────────────────────────────────────────────
       case "menu":
-      case "help":
-      case "start": {
-        // Plain text+image menu — reliable on all WhatsApp clients.
-        // The carousel is still in carouselMenu.ts for future use.
-        await sock.sendMessage(jid, {
-          image: { url: MENU_IMAGE_URL },
-          caption: buildMenu(senderName, jid),
-        } as any, { quoted: msg });
-        break;
-      }
+case "help":
+case "start": {
+  const p = config.BOT_CONFIG.prefix;
+
+  const buttons = [
+  {
+    name: "quick_reply",
+    buttonParamsJson: JSON.stringify({
+      display_text: "📂 Media Cmds",
+      id: "listmedia",
+    }),
+  },
+  {
+    name: "quick_reply",
+    buttonParamsJson: JSON.stringify({
+      display_text: "🤖 AI Cmds",
+      id: "listai",
+    }),
+  },
+  {
+    name: "quick_reply",
+    buttonParamsJson: JSON.stringify({
+      display_text: "🎮 Fun & Games",
+      id: "listfun",
+    }),
+  },
+  {
+    name: "quick_reply",
+    buttonParamsJson: JSON.stringify({
+      display_text: "⚙️ Tools Cmds",
+      id: "listtools",
+    }),
+  },
+  {
+    name: "quick_reply",
+    buttonParamsJson: JSON.stringify({
+      display_text: "👥 Group Cmds",
+      id: "listgroup",
+    }),
+  },
+  {
+    name: "quick_reply",
+    buttonParamsJson: JSON.stringify({
+      display_text: "🛡️ Guard Cmds",
+      id: "listguard",
+    }),
+  },
+  {
+    name: "quick_reply",
+    buttonParamsJson: JSON.stringify({
+      display_text: "⚙️ System Cmds",
+      id: "listsystem",
+    }),
+  },
+  {
+    name: "quick_reply",
+    buttonParamsJson: JSON.stringify({
+      display_text: "⚡ Check Ping",
+      id: "ping",
+    }),
+  },
+  {
+    name: "quick_reply",
+    buttonParamsJson: JSON.stringify({
+      display_text: "⏱️ Check Uptime",
+      id: "uptime",
+    }),
+  },
+];
+  const interactiveMessage = proto.Message.InteractiveMessage.create({
+    body: proto.Message.InteractiveMessage.Body.create({
+      text: buildMenu(senderName, jid),
+    }),
+    footer: proto.Message.InteractiveMessage.Footer.create({
+      text: `Powered by ${config.BOT_CONFIG.botName}`,
+    }),
+    nativeFlowMessage:
+      proto.Message.InteractiveMessage.NativeFlowMessage.create({
+        buttons,
+      }),
+  });
+
+  const menuMsg = generateWAMessageFromContent(
+    jid,
+    {
+      viewOnceMessage: {
+        message: {
+          messageContextInfo: {
+            deviceListMetadata: {},
+            deviceListMetadataVersion: 2,
+          },
+          interactiveMessage,
+        },
+      },
+    } as any,
+    { quoted: msg }
+  );
+
+  await sock.relayMessage(
+    jid,
+    menuMsg.message!,
+    { messageId: menuMsg.key.id! }
+  );
+
+  break;
+}
 
       // ── MENU CATEGORY LISTS (buttons from the carousel land here) ──────────
       case "listmedia": {
