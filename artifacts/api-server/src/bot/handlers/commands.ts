@@ -134,6 +134,10 @@ const BUTTON_LABEL_TO_COMMAND: Record<string, string> = {
   "v2 menu": "zyntrix",
   "check ping": "ping",
   "check uptime": "uptime",
+  "rpg cmds": "listrpg",
+  "audio cmds": "listaudio",
+  "next": "menu2",
+  "back": "menu",
 };
 
 function normalizeButtonLabel(label: unknown): string | null {
@@ -343,112 +347,84 @@ export async function handleCommand(
 
       // ── MENU ──────────────────────────────────────────────────────────────
       case "menu":
-case "help":
-case "start": {
-  const p = config.BOT_CONFIG.prefix;
+      case "help":
+      case "start": {
+        // react processing, send page 1/2 buttons (Zyntrix branding)
+        await sock.sendMessage(jid, { react: { text: "⏳", key: msg.key } });
 
-  const buttons = [
-  {
-    name: "quick_reply",
-    buttonParamsJson: JSON.stringify({
-      display_text: "📂 Media Cmds",
-      id: "listmedia",
-    }),
-  },
-  {
-    name: "quick_reply",
-    buttonParamsJson: JSON.stringify({
-      display_text: "🤖 AI Cmds",
-      id: "listai",
-    }),
-  },
-  {
-    name: "quick_reply",
-    buttonParamsJson: JSON.stringify({
-      display_text: "🎮 Fun & Games",
-      id: "listfun",
-    }),
-  },
-  {
-    name: "quick_reply",
-    buttonParamsJson: JSON.stringify({
-      display_text: "⚙️ Tools Cmds",
-      id: "listtools",
-    }),
-  },
-  {
-    name: "quick_reply",
-    buttonParamsJson: JSON.stringify({
-      display_text: "👥 Group Cmds",
-      id: "listgroup",
-    }),
-  },
-  {
-    name: "quick_reply",
-    buttonParamsJson: JSON.stringify({
-      display_text: "🛡️ Guard Cmds",
-      id: "listguard",
-    }),
-  },
-  {
-    name: "quick_reply",
-    buttonParamsJson: JSON.stringify({
-      display_text: "⚙️ System Cmds",
-      id: "listsystem",
-    }),
-  },
-  {
-    name: "quick_reply",
-    buttonParamsJson: JSON.stringify({
-      display_text: "⚡ Check Ping",
-      id: "ping",
-    }),
-  },
-  {
-    name: "quick_reply",
-    buttonParamsJson: JSON.stringify({
-      display_text: "⏱️ Check Uptime",
-      id: "uptime",
-    }),
-  },
-];
-  const interactiveMessage = proto.Message.InteractiveMessage.create({
-    body: proto.Message.InteractiveMessage.Body.create({
-      text: buildMenu(senderName, jid),
-    }),
-    footer: proto.Message.InteractiveMessage.Footer.create({
-      text: `Powered by ${config.BOT_CONFIG.botName}`,
-    }),
-    nativeFlowMessage:
-      proto.Message.InteractiveMessage.NativeFlowMessage.create({
-        buttons,
-      }),
-  });
+        const userJid = getSender(msg);
+        const userShort = userJid.split("@")[0];
+        const text = `> © Zyntrix tech 💀\n┏ ◆ MOOD: 🧪\n┗ ◆ Web: zyntrix.com\n\n👋 Hey @${userShort}\n*Page 1/2* - Pick a category 👇`;
 
-  const menuMsg = generateWAMessageFromContent(
-    jid,
-    {
-      viewOnceMessage: {
-        message: {
-          messageContextInfo: {
-            deviceListMetadata: {},
-            deviceListMetadataVersion: 2,
-          },
-          interactiveMessage,
-        },
-      },
-    } as any,
-    { quoted: msg }
-  );
+        const buttons = [
+          { buttonId: "listmedia", buttonText: { displayText: "📂 Media Cmds" }, type: 1 },
+          { buttonId: "listai", buttonText: { displayText: "🤖 AI Cmds" }, type: 1 },
+          { buttonId: "listrpg", buttonText: { displayText: "⚔️ RPG Cmds" }, type: 1 },
+          { buttonId: "listaudio", buttonText: { displayText: "🎛️ Audio Cmds" }, type: 1 },
+          { buttonId: "menu2", buttonText: { displayText: "Next ➡️" }, type: 1 },
+        ];
 
-  await sock.relayMessage(
-    jid,
-    menuMsg.message!,
-    { messageId: menuMsg.key.id! }
-  );
+        // construct a fake fkontak quoted message so the menu shows the badge
+        const fkontakProto = proto.Message.create({
+          contactMessage: proto.Message.ContactMessage.create({
+            displayName: "WhatsApp Business ✅",
+            vcard: "BEGIN:VCARD\nVERSION:3.0\nFN:WhatsApp Business\nORG:WhatsApp Inc.\nEND:VCARD",
+          }),
+        });
+        const fakeFkontak: WAMessage = {
+          key: { fromMe: false, participant: "0@s.whatsapp.net", remoteJid: "status@broadcast", id: `FKONTAK-${Date.now()}` },
+          message: fkontakProto,
+        } as any;
 
-  break;
-}
+        await sock.sendMessage(jid, {
+          text,
+          footer: "Zyntrix tech 🫀",
+          buttons,
+          headerType: 1,
+          mentions: [userJid],
+        }, { quoted: fakeFkontak });
+
+        await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } });
+        break;
+      }
+
+      case "menu2": {
+        await sock.sendMessage(jid, { react: { text: "⏳", key: msg.key } });
+
+        const userJid = getSender(msg);
+        const userShort = userJid.split("@")[0];
+        const text = `> © Zyntrix tech 💀\n┏ ◆ MOOD: 🧪\n┗ ◆ Web: zyntrix.com\n\n👋 Hey @${userShort}\n*Page 2/2* - More tools 👇`;
+
+        const buttons = [
+          { buttonId: "listtools", buttonText: { displayText: "⚙️ Tools Cmds" }, type: 1 },
+          { buttonId: "listsystem", buttonText: { displayText: "🛡️ System Cmds" }, type: 1 },
+          { buttonId: "uptime", buttonText: { displayText: "⏳ Uptime" }, type: 1 },
+          { buttonId: "owner", buttonText: { displayText: "👨‍💻 Owner" }, type: 1 },
+          { buttonId: "menu", buttonText: { displayText: "⬅️ Back" }, type: 1 },
+        ];
+
+        const fkontakProto = proto.Message.create({
+          contactMessage: proto.Message.ContactMessage.create({
+            displayName: "WhatsApp Business ✅",
+            vcard: "BEGIN:VCARD\nVERSION:3.0\nFN:WhatsApp Business\nORG:WhatsApp Inc.\nEND:VCARD",
+          }),
+        });
+        const fakeFkontak: WAMessage = {
+          key: { fromMe: false, participant: "0@s.whatsapp.net", remoteJid: "status@broadcast", id: `FKONTAK-${Date.now()}` },
+          message: fkontakProto,
+        } as any;
+
+        await sock.sendMessage(jid, {
+          text,
+          footer: "Zyntrix tech 🫀",
+          buttons,
+          headerType: 1,
+          mentions: [userJid],
+        }, { quoted: fakeFkontak });
+
+        await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } });
+        break;
+      }
 
       // ── MENU CATEGORY LISTS (buttons from the carousel land here) ──────────
       case "listmedia": {
@@ -469,6 +445,20 @@ case "start": {
         const p = config.BOT_CONFIG.prefix;
         await sock.sendMessage(jid, {
           text: `┏ ❑ ⌜ *🎮 FUN & GAMES* ⌟ ◆\n┣ ◆ ${p}joke / ${p}meme / ${p}fact\n┣ ◆ ${p}truth / ${p}dare / ${p}tod\n┣ ◆ ${p}8ball [question]\n┣ ◆ ${p}wouldyourather / ${p}wyr\n┣ ◆ ${p}dice / ${p}coinflip / ${p}slots\n┣ ◆ ${p}rps [r/p/s]\n┣ ◆ ${p}ship / ${p}rate / ${p}choose\n┣ ◆ ${p}quote / ${p}roast / ${p}compliment\n┣ ◆ ${p}mock / ${p}reverse / ${p}emojify\n┣ ◆ ${p}trivia / ${p}math\n┗ ◆ ${p}cat / ${p}dog / ${p}random`,
+        }, { quoted: msg });
+        break;
+      }
+      case "listrpg": {
+        const p = config.BOT_CONFIG.prefix;
+        await sock.sendMessage(jid, {
+          text: `┏ ❑ ⌜ *⚔️ RPG & GAME COMMANDS* ⌟ ◆\n┣ ◆ ${p}rps [r/p/s]\n┣ ◆ ${p}trivia\n┣ ◆ ${p}math\n┣ ◆ ${p}wouldyourather / ${p}wyr\n┗ ◆ Play with friends and bots!`,
+        }, { quoted: msg });
+        break;
+      }
+      case "listaudio": {
+        const p = config.BOT_CONFIG.prefix;
+        await sock.sendMessage(jid, {
+          text: `┏ ❑ ⌜ *🎛️ AUDIO & MUSIC* ⌟ ◆\n┣ ◆ ${p}song / ${p}ytmp3 [search/url]\n┣ ◆ ${p}ytvid / ${p}ytmp4 [search/url]\n┣ ◆ ${p}play — alias for song\n┗ ◆ Use ${p}save to save media`,
         }, { quoted: msg });
         break;
       }
