@@ -24,6 +24,7 @@ import {
   handleCoinFlip, handleDice, handleRate, handleChoose, handleQuote,
   handleRoast, handleCompliment, handleFact,
 } from "./fun.js";
+
 import {
   handleWiki, handleWeather, handleTranslate, handleCalc, handleQRGen,
   handlePassword, handleShorten, handleBase64, handleBinary, handleHash,
@@ -63,29 +64,24 @@ import {
   generateKeys, revokeKey, revokeAllKeys, getKeyStats,
 } from "../keys.js";
 
+// WhatsApp sometimes wraps the "real" message one level deep (disappearing
+// messages, view-once, etc). Button taps can be affected by this too, so
+// unwrap before looking for the interactive response payload.
 // ── Helpers ───────────────────────────────────────────────────────────────────
 export function getSender(msg: WAMessage): string {
   return msg.key.participant ?? msg.key.remoteJid ?? "";
 }
 
 export function isOwner(msg: WAMessage): boolean {
-  // If the message came FROM the connected device, it's always the owner
   if (msg.key.fromMe === true) return true;
-
   const sender = getSender(msg);
-
-  // Explicit owner set via .setowner or auto-detected on connect
   if (config.botOwnerJid) {
     return config.isOwnerJid(sender) || config.isOwnerJid(msg.key.remoteJid ?? "");
   }
-
-  // Fallback to OWNER_NUMBER env var
   const owner = config.BOT_CONFIG.ownerNumber;
   if (owner) {
     return sender.includes(owner) || (msg.key.remoteJid ?? "").includes(owner);
   }
-
-  // No owner configured at all — nobody is owner except fromMe (handled above)
   return false;
 }
 
@@ -103,9 +99,6 @@ export function getMessageText(msg: WAMessage): string {
   );
 }
 
-// WhatsApp sometimes wraps the "real" message one level deep (disappearing
-// messages, view-once, etc). Button taps can be affected by this too, so
-// unwrap before looking for the interactive response payload.
 function unwrapMessage(message: any): any {
   if (!message) return message;
   return (
@@ -349,7 +342,6 @@ export async function handleCommand(
       case "menu":
       case "help":
       case "start": {
-        // react processing, send page 1/2 buttons (Zyntrix branding)
         await sock.sendMessage(jid, { react: { text: "⏳", key: msg.key } });
 
         const userJid = getSender(msg);
@@ -357,33 +349,35 @@ export async function handleCommand(
         const text = `> © Zyntrix tech 💀\n┏ ◆ MOOD: 🧪\n┗ ◆ Web: zyntrix.com\n\n👋 Hey @${userShort}\n*Page 1/2* - Pick a category 👇`;
 
         const buttons = [
-          { buttonId: "listmedia", buttonText: { displayText: "📂 Media Cmds" }, type: 1 },
-          { buttonId: "listai", buttonText: { displayText: "🤖 AI Cmds" }, type: 1 },
-          { buttonId: "listrpg", buttonText: { displayText: "⚔️ RPG Cmds" }, type: 1 },
-          { buttonId: "listaudio", buttonText: { displayText: "🎛️ Audio Cmds" }, type: 1 },
-          { buttonId: "menu2", buttonText: { displayText: "Next ➡️" }, type: 1 },
+          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "📂 Media Cmds", id: "listmedia" }) },
+          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🤖 AI Cmds", id: "listai" }) },
+          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⚔️ RPG Cmds", id: "listrpg" }) },
+          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🎛️ Audio Cmds", id: "listaudio" }) },
+          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Next ➡️", id: "menu2" }) },
         ];
 
-        // construct a fake fkontak quoted message so the menu shows the badge
-        const fkontakProto = proto.Message.create({
+        const interactiveMessage = proto.Message.InteractiveMessage.create({
+          body: proto.Message.InteractiveMessage.Body.create({ text }),
+          footer: proto.Message.InteractiveMessage.Footer.create({ text: "Zyntrix tech 🫀" }),
+          nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({ buttons }),
+          contextInfo: proto.ContextInfo.create({ mentionedJid: [userJid] }),
+        });
+
+        const fkontak = proto.Message.create({
           contactMessage: proto.Message.ContactMessage.create({
             displayName: "WhatsApp Business ✅",
             vcard: "BEGIN:VCARD\nVERSION:3.0\nFN:WhatsApp Business\nORG:WhatsApp Inc.\nEND:VCARD",
           }),
         });
-        const fakeFkontak: WAMessage = {
-          key: { fromMe: false, participant: "0@s.whatsapp.net", remoteJid: "status@broadcast", id: `FKONTAK-${Date.now()}` },
-          message: fkontakProto,
-        } as any;
+        const fakeQuoted = { key: { fromMe: false, participant: "0@s.whatsapp.net", remoteJid: "status@broadcast", id: `FKONTAK-${Date.now()}` }, message: fkontak } as any;
 
-        await sock.sendMessage(jid, {
-          text,
-          footer: "Zyntrix tech 🫀",
-          buttons,
-          headerType: 1,
-          mentions: [userJid],
-        }, { quoted: fakeFkontak });
+        const menuMsg = generateWAMessageFromContent(
+          jid,
+          { viewOnceMessage: { message: { messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }, interactiveMessage } } } as any,
+          { quoted: fakeQuoted } as any
+        );
 
+        await sock.relayMessage(jid, menuMsg.message!, { messageId: menuMsg.key.id! });
         await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } });
         break;
       }
@@ -396,32 +390,35 @@ export async function handleCommand(
         const text = `> © Zyntrix tech 💀\n┏ ◆ MOOD: 🧪\n┗ ◆ Web: zyntrix.com\n\n👋 Hey @${userShort}\n*Page 2/2* - More tools 👇`;
 
         const buttons = [
-          { buttonId: "listtools", buttonText: { displayText: "⚙️ Tools Cmds" }, type: 1 },
-          { buttonId: "listsystem", buttonText: { displayText: "🛡️ System Cmds" }, type: 1 },
-          { buttonId: "uptime", buttonText: { displayText: "⏳ Uptime" }, type: 1 },
-          { buttonId: "owner", buttonText: { displayText: "👨‍💻 Owner" }, type: 1 },
-          { buttonId: "menu", buttonText: { displayText: "⬅️ Back" }, type: 1 },
+          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⚙️ Tools Cmds", id: "listtools" }) },
+          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🛡️ System Cmds", id: "listsystem" }) },
+          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⏳ Uptime", id: "runtime" }) },
+          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "👨‍💻 Owner", id: "owner" }) },
+          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⬅️ Back", id: "menu" }) },
         ];
 
-        const fkontakProto = proto.Message.create({
+        const interactiveMessage = proto.Message.InteractiveMessage.create({
+          body: proto.Message.InteractiveMessage.Body.create({ text }),
+          footer: proto.Message.InteractiveMessage.Footer.create({ text: "Zyntrix tech 🫀" }),
+          nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({ buttons }),
+          contextInfo: proto.ContextInfo.create({ mentionedJid: [userJid] }),
+        });
+
+        const fkontak = proto.Message.create({
           contactMessage: proto.Message.ContactMessage.create({
             displayName: "WhatsApp Business ✅",
             vcard: "BEGIN:VCARD\nVERSION:3.0\nFN:WhatsApp Business\nORG:WhatsApp Inc.\nEND:VCARD",
           }),
         });
-        const fakeFkontak: WAMessage = {
-          key: { fromMe: false, participant: "0@s.whatsapp.net", remoteJid: "status@broadcast", id: `FKONTAK-${Date.now()}` },
-          message: fkontakProto,
-        } as any;
+        const fakeQuoted = { key: { fromMe: false, participant: "0@s.whatsapp.net", remoteJid: "status@broadcast", id: `FKONTAK-${Date.now()}` }, message: fkontak } as any;
 
-        await sock.sendMessage(jid, {
-          text,
-          footer: "Zyntrix tech 🫀",
-          buttons,
-          headerType: 1,
-          mentions: [userJid],
-        }, { quoted: fakeFkontak });
+        const menuMsg = generateWAMessageFromContent(
+          jid,
+          { viewOnceMessage: { message: { messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }, interactiveMessage } } } as any,
+          { quoted: fakeQuoted } as any
+        );
 
+        await sock.relayMessage(jid, menuMsg.message!, { messageId: menuMsg.key.id! });
         await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } });
         break;
       }
@@ -509,6 +506,13 @@ export async function handleCommand(
       }
 
       case "uptime":
+        await sock.sendMessage(jid, {
+          text: `⏱️ *Uptime:* ${getUptime()}\n_${config.BOT_CONFIG.botName} has been running non-stop!_`,
+        }, { quoted: msg });
+        break;
+
+      case "runtime":
+        // alias for uptime
         await sock.sendMessage(jid, {
           text: `⏱️ *Uptime:* ${getUptime()}\n_${config.BOT_CONFIG.botName} has been running non-stop!_`,
         }, { quoted: msg });
