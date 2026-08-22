@@ -371,14 +371,32 @@ export async function handleCommand(
         });
         const fakeQuoted = { key: { fromMe: false, participant: "0@s.whatsapp.net", remoteJid: "status@broadcast", id: `FKONTAK-${Date.now()}` }, message: fkontak } as any;
 
-        const menuMsg = generateWAMessageFromContent(
-          jid,
-          { viewOnceMessage: { message: { messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }, interactiveMessage } } } as any,
-          { quoted: fakeQuoted } as any
-        );
+        try {
+          const menuMsg = generateWAMessageFromContent(
+            jid,
+            { viewOnceMessage: { message: { messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }, interactiveMessage } } } as any,
+            { quoted: fakeQuoted } as any
+          );
 
-        await sock.relayMessage(jid, menuMsg.message!, { messageId: menuMsg.key.id! });
-        await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } });
+          await sock.relayMessage(jid, menuMsg.message!, { messageId: menuMsg.key.id! });
+          await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } });
+        } catch (err: any) {
+          logger.error({ err }, "[Menu] interactiveMessage relay failed, falling back to text buttons");
+          // Fallback: send a plain text menu with quick-reply style buttons (may work on some clients)
+          await sock.sendMessage(jid, {
+            text,
+            footer: "Zyntrix tech 🫀",
+            buttons: [
+              { buttonId: ".listmedia", buttonText: { displayText: "📂 Media Cmds" }, type: 1 },
+              { buttonId: ".listai", buttonText: { displayText: "🤖 AI Cmds" }, type: 1 },
+              { buttonId: ".listrpg", buttonText: { displayText: "⚔️ RPG Cmds" }, type: 1 },
+              { buttonId: ".listaudio", buttonText: { displayText: "🎛️ Audio Cmds" }, type: 1 },
+              { buttonId: ".menu2", buttonText: { displayText: "Next ➡️" }, type: 1 },
+            ],
+            headerType: 1,
+            mentions: [userJid],
+          }, { quoted: fakeQuoted });
+        }
         break;
       }
 
@@ -412,14 +430,31 @@ export async function handleCommand(
         });
         const fakeQuoted = { key: { fromMe: false, participant: "0@s.whatsapp.net", remoteJid: "status@broadcast", id: `FKONTAK-${Date.now()}` }, message: fkontak } as any;
 
-        const menuMsg = generateWAMessageFromContent(
-          jid,
-          { viewOnceMessage: { message: { messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }, interactiveMessage } } } as any,
-          { quoted: fakeQuoted } as any
-        );
+        try {
+          const menuMsg = generateWAMessageFromContent(
+            jid,
+            { viewOnceMessage: { message: { messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }, interactiveMessage } } } as any,
+            { quoted: fakeQuoted } as any
+          );
 
-        await sock.relayMessage(jid, menuMsg.message!, { messageId: menuMsg.key.id! });
-        await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } });
+          await sock.relayMessage(jid, menuMsg.message!, { messageId: menuMsg.key.id! });
+          await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } });
+        } catch (err: any) {
+          logger.error({ err }, "[Menu2] interactiveMessage relay failed, falling back to text buttons");
+          await sock.sendMessage(jid, {
+            text,
+            footer: "Zyntrix tech 🫀",
+            buttons: [
+              { buttonId: ".listtools", buttonText: { displayText: "⚙️ Tools Cmds" }, type: 1 },
+              { buttonId: ".listsystem", buttonText: { displayText: "🛡️ System Cmds" }, type: 1 },
+              { buttonId: ".runtime", buttonText: { displayText: "⏳ Uptime" }, type: 1 },
+              { buttonId: ".owner", buttonText: { displayText: "👨‍💻 Owner" }, type: 1 },
+              { buttonId: ".menu", buttonText: { displayText: "⬅️ Back" }, type: 1 },
+            ],
+            headerType: 1,
+            mentions: [userJid],
+          }, { quoted: fakeQuoted });
+        }
         break;
       }
 
